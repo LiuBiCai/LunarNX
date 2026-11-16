@@ -56,7 +56,10 @@ The combined Xbox/PlayStation build must use `CURL_PROVIDER=moonlight`. That pro
 
 ## Desktop Development
 
-The desktop target supports protocol probes and regression tests. It is not a replacement for a Switch build or real-hardware validation.
+The desktop target currently provides an Xbox command-line streaming runner
+with an SDL video/audio window. The Windows target is Xbox-first and does not
+include the Switch UI or PlayStation workflows; existing macOS/Linux desktop
+diagnostic workflows are unchanged.
 
 ```sh
 make -f Makefile.desktop
@@ -66,6 +69,33 @@ make -f Makefile.desktop xcloud_session_support_test
 ```
 
 Additional diagnostic targets include `sdp_probe`, `xcloud_handshake_probe`, and `xcloud_stream`.
+
+### Windows Xbox CLI
+
+The Windows build uses CMake, MSVC, and vcpkg. Install Visual Studio 2022 Build
+Tools with the C++ workload, Git for Windows (including Git Bash), CMake, and
+vcpkg. Set `VCPKG_ROOT` to the vcpkg checkout. From Git Bash, fetch the pinned
+local dependencies:
+
+```sh
+bash scripts/setup_dependencies.sh
+```
+
+Then configure and build from a Visual Studio Developer PowerShell:
+
+```powershell
+cmake -S . -B build/windows `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows `
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build/windows --config Release --target LunarNX_Desktop
+```
+
+The vcpkg manifest installs SDL2, FFmpeg, Opus, curl, OpenSSL, Mbed TLS, and
+libsrtp. Run `build/windows/Release/LunarNX_Desktop.exe` from a console. The
+current CLI flow supports Xbox Remote Play. Xbox Cloud and PlayStation flows,
+along with the full graphical application, are not part of this first Windows
+target.
 
 ## Validation
 

@@ -1,0 +1,13 @@
+{
+  "name": "lunarnx",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "curl",
+    "ffmpeg",
+    "libsrtp",
+    "mbedtls",
+    "openssl",
+    "opus",
+    "sdl2"
+  ]
+}

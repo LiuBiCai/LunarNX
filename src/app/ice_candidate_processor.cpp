@@ -1,8 +1,13 @@
 #include "ice_candidate_processor.h"
 
 #include <cJSON.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#endif
 
 #include <algorithm>
 #include <array>

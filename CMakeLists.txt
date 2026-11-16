@@ -17,7 +17,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # =============================================================================
 # Platform detection
 # =============================================================================
-if(DEFINED ENV{DEVKITPRO} AND NOT DEFINED PLATFORM_DESKTOP)
+if(WIN32)
+    set(PLATFORM_DESKTOP ON)
+    set(PLATFORM_SWITCH OFF)
+    message(STATUS "Platform: Windows desktop")
+elseif(DEFINED ENV{DEVKITPRO} AND NOT DEFINED PLATFORM_DESKTOP)
     set(PLATFORM_SWITCH ON)
     message(STATUS "Platform: Switch (auto-detected)")
 else()
@@ -36,6 +40,7 @@ set(LUNARNX_SOURCES
     src/auth/auth_manager.cpp
     src/auth/token_store.cpp
     src/auth/xbox_signing.cpp
+    src/auth/xbox_auth_errors.cpp
 
     # API
     src/api/xbox_api_client.cpp
@@ -43,10 +48,13 @@ set(LUNARNX_SOURCES
 
     # WebRTC
     src/webrtc/peer_manager.cpp
+    src/webrtc/video_rtp_jitter_buffer.cpp
+    src/webrtc/xbox_input_feedback.cpp
 
     # Stream
     src/stream/stream_backend_provider.cpp
     src/stream/media_pipeline.cpp
+    src/stream/audio_packet_reorder.cpp
     src/stream/video_decoder.cpp
     src/stream/audio_decoder.cpp
     src/stream/video_renderer.cpp
@@ -57,6 +65,7 @@ set(LUNARNX_SOURCES
     # Input
     src/input/gamepad_reader.cpp
     src/input/xinput_encoder.cpp
+    src/input/xbox_input_accumulator.cpp
     src/input/rumble_controller.cpp
 
     # App
@@ -67,24 +76,6 @@ set(LUNARNX_SOURCES
     src/app/xbox_channel_manager.cpp
     src/app/xbox_session_client.cpp
     src/app/xbox_stream_session.cpp
-
-    # PlayStation
-    src/ps/chiaki_log_adapter.cpp
-    src/ps/ps_credentials.cpp
-    src/ps/ps_route_preferences.cpp
-    src/ps/ps_discovery.cpp
-    src/ps/ps_registration.cpp
-    src/ps/ps_manager.cpp
-    src/ps/ps_input_mapper.cpp
-    src/ps/ps_haptics_rumble.cpp
-    src/ps/ps_media_bridge.cpp
-    src/ps/ps_stream_session.cpp
-    src/ps/ps_stream_controller.cpp
-    src/ps/psn_auth_manager.cpp
-    src/ps/psn_auth_utils.cpp
-    src/ps/ps_console_repository.cpp
-    src/ps/ps_connection_plan.cpp
-    src/ps/ps_remote_connector.cpp
 
     # JSON
     lib/cJSON.c
@@ -116,6 +107,22 @@ if(PLATFORM_SWITCH)
     include("${CMAKE_CURRENT_LIST_DIR}/cmake/SwitchToolchain.cmake")
 
     list(APPEND LUNARNX_SOURCES
+        src/ps/chiaki_log_adapter.cpp
+        src/ps/ps_credentials.cpp
+        src/ps/ps_route_preferences.cpp
+        src/ps/ps_discovery.cpp
+        src/ps/ps_registration.cpp
+        src/ps/ps_manager.cpp
+        src/ps/ps_input_mapper.cpp
+        src/ps/ps_haptics_rumble.cpp
+        src/ps/ps_media_bridge.cpp
+        src/ps/ps_stream_session.cpp
+        src/ps/ps_stream_controller.cpp
+        src/ps/psn_auth_manager.cpp
+        src/ps/psn_auth_utils.cpp
+        src/ps/ps_console_repository.cpp
+        src/ps/ps_connection_plan.cpp
+        src/ps/ps_remote_connector.cpp
         src/main.cpp
         src/ui/auth_activity.cpp
         src/ui/main_activity.cpp
@@ -170,11 +177,40 @@ if(PLATFORM_SWITCH)
 
 else()
     # =========================================================================
-    # Desktop target (macOS/Linux testing)
+    # Desktop target (Windows/macOS/Linux CLI testing)
     # =========================================================================
+    if(NOT WIN32)
+        list(APPEND LUNARNX_SOURCES
+            src/ps/chiaki_log_adapter.cpp
+            src/ps/ps_credentials.cpp
+            src/ps/ps_route_preferences.cpp
+            src/ps/ps_discovery.cpp
+            src/ps/ps_registration.cpp
+            src/ps/ps_manager.cpp
+            src/ps/ps_input_mapper.cpp
+            src/ps/ps_haptics_rumble.cpp
+            src/ps/ps_media_bridge.cpp
+            src/ps/ps_stream_session.cpp
+            src/ps/ps_stream_controller.cpp
+            src/ps/psn_auth_manager.cpp
+            src/ps/psn_auth_utils.cpp
+            src/ps/ps_console_repository.cpp
+            src/ps/ps_connection_plan.cpp
+            src/ps/ps_remote_connector.cpp
+        )
+    endif()
+
     list(APPEND LUNARNX_SOURCES
         src/platform/desktop_main.cpp
+        src/platform/network_worker.cpp
+        lib/stubs/chiaki_holepunch_stubs.c
     )
+
+    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/src/peer_connection.c")
+        message(FATAL_ERROR
+            "The local libpeer checkout is missing. Run "
+            "scripts/setup_dependencies.sh from Git Bash before configuring.")
+    endif()
 
     # System dependencies
     find_package(OpenSSL REQUIRED)
@@ -195,6 +231,9 @@ else()
         )
         set(SDL2_INCLUDE_DIRS ${SDL2_INCLUDE_DIR})
         set(SDL2_LIBRARIES ${SDL2_LIBRARY})
+    elseif(WIN32)
+        find_package(SDL2 CONFIG REQUIRED)
+        set(SDL2_LIBRARIES SDL2::SDL2)
     else()
         find_package(PkgConfig QUIET)
         if(PkgConfig_FOUND)
@@ -219,6 +258,16 @@ else()
     find_path(AVCODEC_INCLUDE libavcodec/avcodec.h REQUIRED)
     find_path(AVUTIL_INCLUDE libavutil/frame.h REQUIRED)
     find_path(OPUS_INCLUDE opus/opus_multistream.h REQUIRED)
+    find_path(MBEDTLS_INCLUDE mbedtls/ssl.h REQUIRED)
+    find_path(SRTP2_INCLUDE srtp2/srtp.h REQUIRED)
+    find_library(MBEDTLS_LIBRARY mbedtls
+        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+    find_library(MBEDCRYPTO_LIBRARY mbedcrypto
+        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+    find_library(MBEDX509_LIBRARY mbedx509
+        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+    find_library(SRTP2_LIBRARY srtp2
+        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
 
     add_executable(LunarNX_Desktop ${LUNARNX_SOURCES})
 
@@ -228,6 +277,12 @@ else()
         CONFIG_USE_USRSCTP=0
         CONFIG_DTLS_USE_ECDSA=1
     )
+    if(WIN32)
+        target_compile_definitions(LunarNX_Desktop PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+        )
+    endif()
 
     target_include_directories(LunarNX_Desktop PRIVATE
         src/
@@ -242,6 +297,8 @@ else()
         ${AVCODEC_INCLUDE}
         ${AVUTIL_INCLUDE}
         ${OPUS_INCLUDE}
+        ${MBEDTLS_INCLUDE}
+        ${SRTP2_INCLUDE}
     )
     if(APPLE)
         target_compile_options(LunarNX_Desktop PRIVATE
@@ -257,8 +314,12 @@ else()
         OpenSSL::SSL OpenSSL::Crypto CURL::libcurl
         ${SDL2_LIBRARIES}
         ${AVCODEC_LIB} ${AVUTIL_LIB} ${SWRESAMPLE_LIB} ${OPUS_LIB}
-        mbedtls mbedcrypto mbedx509 srtp2
+        ${MBEDTLS_LIBRARY} ${MBEDCRYPTO_LIBRARY} ${MBEDX509_LIBRARY}
+        ${SRTP2_LIBRARY}
     )
+    if(WIN32)
+        target_link_libraries(LunarNX_Desktop PRIVATE ws2_32)
+    endif()
 
     message(STATUS "Desktop target: LunarNX_Desktop")
 

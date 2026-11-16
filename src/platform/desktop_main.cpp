@@ -20,6 +20,10 @@
  *   Tab=View  Esc=Menu/Exit   Z/C=L3/R3
  */
 
+#ifdef _WIN32
+#include <winsock2.h>
+#endif
+
 #include "../app/stream_controller.h"
 #include <cstdio>
 #include <thread>
@@ -28,11 +32,36 @@
 static std::atomic<bool> g_running{true};
 static void on_signal(int) { g_running = false; }
 
+#ifdef _WIN32
+class WinsockLifetime {
+public:
+    WinsockLifetime() : result_(WSAStartup(MAKEWORD(2, 2), &data_)) {}
+    ~WinsockLifetime() {
+        if (result_ == 0) WSACleanup();
+    }
+
+    bool initialized() const { return result_ == 0; }
+
+private:
+    WSADATA data_{};
+    int result_;
+};
+#endif
+
 int main() {
     setbuf(stdout, NULL);  // unbuffered for test output
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
+#ifdef _WIN32
+    WinsockLifetime winsock;
+    if (!winsock.initialized()) {
+        fprintf(stderr, "ERROR: Failed to initialize Windows networking.\n");
+        return 1;
+    }
+#endif
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     printf("=== LunarNX Desktop Test v0.1 ===\n\n");
 

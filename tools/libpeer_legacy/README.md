@@ -5,11 +5,12 @@ LunarNX currently builds Switch WebRTC with the legacy local clone at
 embedded git checkout with generated build outputs and third-party dependency
 trees.
 
-The local Switch/Xbox changes are stored as an ordered four-patch series. The
-first two patches preserve commits that previously existed only in the local
-embedded checkout; `legacy-libpeer-switch.patch` contains the later media and
-transport changes; `0003-enable-usrsctp-datachannel-policy.patch` enables the
-full SCTP send policy used by the Switch build. Local commits in libpeer's
+The local changes are stored as an ordered five-patch series. The first two
+patches preserve commits that previously existed only in the local embedded
+checkout; `legacy-libpeer-switch.patch` contains the media and transport
+changes; `0003-enable-usrsctp-datachannel-policy.patch` enables the full SCTP
+send policy used by the Switch build; and `0004-windows-winsock.patch` adds the
+MSVC/Winsock socket and network-interface path. Local commits in libpeer's
 libsrtp, mbedtls, and usrsctp submodules are stored separately under `nested/`;
 the setup script applies them to the pinned upstream submodule revisions instead
 of recording unreachable gitlink commits.
@@ -26,8 +27,16 @@ git -C lib/libpeer apply ../../tools/libpeer_legacy/0001-switch-adapt-libpeer-We
 git -C lib/libpeer apply ../../tools/libpeer_legacy/0002-fix-H264-access-unit-flush-and-quiet-SCTP-logs.patch
 git -C lib/libpeer apply ../../tools/libpeer_legacy/legacy-libpeer-switch.patch
 git -C lib/libpeer apply ../../tools/libpeer_legacy/0003-enable-usrsctp-datachannel-policy.patch
+git -C lib/libpeer apply ../../tools/libpeer_legacy/0004-windows-winsock.patch
 ./scripts/setup_dependencies.sh
 ```
+
+The Windows portability patch keeps Winsock handles at their native pointer
+width, maps socket errors to the errno values used by the WebRTC retry policy,
+uses nonblocking UDP sockets with `select()` readiness, enumerates host
+addresses with `GetAdaptersAddresses()`, and uses Windows monotonic timers.
+The project links `ws2_32` and `iphlpapi` for this path. The current MSVC build
+uses the built-in SCTP implementation; it does not enable usrsctp.
 
 The patch includes the Switch/Xbox media-path fixes, including the inbound RTP
 packet buffer increase from `CONFIG_MTU` to `CONFIG_PACKET_BUFFER_SIZE=2048`.

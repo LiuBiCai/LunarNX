@@ -1,0 +1,1037 @@
+diff --git a/src/address.h b/src/address.h
+index 6f8eb78..ace1f88 100644
+--- a/src/address.h
++++ b/src/address.h
+@@ -5,9 +5,13 @@
+ #if CONFIG_USE_LWIP
+ #include <lwip/sockets.h>
+ #else
++#ifdef _WIN32
++#include "socket_compat.h"
++#else
+ #include <arpa/inet.h>
+ #include <sys/socket.h>
+ #endif
++#endif
+ #include <stdint.h>
+ 
+ #define ADDRSTRLEN INET6_ADDRSTRLEN
+diff --git a/src/agent.c b/src/agent.c
+index 9d1a82b..56b31b9 100644
+--- a/src/agent.c
++++ b/src/agent.c
+@@ -2,8 +2,10 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <stdarg.h>
++#ifndef _WIN32
+ #include <sys/select.h>
+ #include <unistd.h>
++#endif
+ 
+ #include "agent.h"
+ #include "base64.h"
+@@ -184,14 +186,16 @@ int agent_create(Agent* agent) {
+     LOGE("Failed to create UDP socket.");
+     return ret;
+   }
+-  LOGI("create IPv4 UDP socket: %d", agent->udp_sockets[0].fd);
++  LOGI("create IPv4 UDP socket: %llu",
++       (unsigned long long)agent->udp_sockets[0].fd);
+ 
+ #if CONFIG_IPV6
+   if ((ret = udp_socket_open(&agent->udp_sockets[1], AF_INET6, 0)) < 0) {
+-    agent->udp_sockets[1].fd = -1;
++    agent->udp_sockets[1].fd = PEER_INVALID_SOCKET;
+     LOGW("IPv6 UDP socket unavailable; continuing with IPv4.");
+   } else {
+-    LOGI("create IPv6 UDP socket: %d", agent->udp_sockets[1].fd);
++    LOGI("create IPv6 UDP socket: %llu",
++         (unsigned long long)agent->udp_sockets[1].fd);
+   }
+ #endif
+ 
+@@ -202,12 +206,12 @@ int agent_create(Agent* agent) {
+ }
+ 
+ void agent_destroy(Agent* agent) {
+-  if (agent->udp_sockets[0].fd > 0) {
++  if (PEER_SOCKET_VALID(agent->udp_sockets[0].fd)) {
+     udp_socket_close(&agent->udp_sockets[0]);
+   }
+ 
+ #if CONFIG_IPV6
+-  if (agent->udp_sockets[1].fd > 0) {
++  if (PEER_SOCKET_VALID(agent->udp_sockets[1].fd)) {
+     udp_socket_close(&agent->udp_sockets[1]);
+   }
+ #endif
+@@ -220,7 +224,7 @@ static int agent_socket_recv_with_timeout(Agent* agent,
+                                           int timeout_ms) {
+   int ret = -1;
+   int i = 0;
+-  int maxfd = -1;
++  PeerSocket maxfd = PEER_INVALID_SOCKET;
+   fd_set rfds;
+   struct timeval tv;
+   int addr_type[] = { AF_INET,
+@@ -234,22 +238,23 @@ static int agent_socket_recv_with_timeout(Agent* agent,
+   FD_ZERO(&rfds);
+ 
+   for (i = 0; i < sizeof(addr_type) / sizeof(addr_type[0]); i++) {
+-    if (agent->udp_sockets[i].fd > maxfd) {
++    if (PEER_SOCKET_VALID(agent->udp_sockets[i].fd) &&
++        (!PEER_SOCKET_VALID(maxfd) || agent->udp_sockets[i].fd > maxfd)) {
+       maxfd = agent->udp_sockets[i].fd;
+     }
+-    if (agent->udp_sockets[i].fd >= 0) {
++    if (PEER_SOCKET_VALID(agent->udp_sockets[i].fd)) {
+       FD_SET(agent->udp_sockets[i].fd, &rfds);
+     }
+   }
+ 
+-  ret = select(maxfd + 1, &rfds, NULL, NULL, &tv);
++  ret = select(PEER_SELECT_NFDS(maxfd), &rfds, NULL, NULL, &tv);
+   if (ret < 0) {
+     LOGE("select error");
+   } else if (ret == 0) {
+     // timeout
+   } else {
+     for (i = 0; i < (int)(sizeof(addr_type) / sizeof(addr_type[0])); i++) {
+-      if (agent->udp_sockets[i].fd < 0) {
++      if (!PEER_SOCKET_VALID(agent->udp_sockets[i].fd)) {
+         continue;
+       }
+       if (FD_ISSET(agent->udp_sockets[i].fd, &rfds)) {
+@@ -289,7 +294,7 @@ static int agent_socket_recv_nonblocking(Agent* agent,
+       continue;
+     }
+ #endif
+-    if (agent->udp_sockets[index].fd < 0) {
++    if (!PEER_SOCKET_VALID(agent->udp_sockets[index].fd)) {
+       continue;
+     }
+     const int ret = udp_socket_recvfrom_nonblocking(
+diff --git a/src/agent.h b/src/agent.h
+index 1b663ab..145993f 100644
+--- a/src/agent.h
++++ b/src/agent.h
+@@ -4,7 +4,6 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+-#include <unistd.h>
+ 
+ #include "base64.h"
+ #include "ice.h"
+diff --git a/src/dtls_srtp.c b/src/dtls_srtp.c
+index a35e0f8..1132eb2 100644
+--- a/src/dtls_srtp.c
++++ b/src/dtls_srtp.c
+@@ -1,7 +1,9 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#ifndef _WIN32
+ #include <unistd.h>
++#endif
+ 
+ #include "address.h"
+ #include "config.h"
+diff --git a/src/mdns.c b/src/mdns.c
+index 6d7881c..48fa95a 100644
+--- a/src/mdns.c
++++ b/src/mdns.c
+@@ -2,8 +2,10 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#ifndef _WIN32
+ #include <sys/select.h>
+ #include <unistd.h>
++#endif
+ #include "address.h"
+ #include "socket.h"
+ #include "utils.h"
+@@ -25,7 +27,7 @@ typedef struct DnsAnswer {
+   uint16_t class;
+   uint32_t ttl;
+   uint16_t length;
+-  uint8_t data[0];
++  uint8_t data[];
+ } DnsAnswer;
+ 
+ typedef struct DnsQuery {
+@@ -122,7 +124,8 @@ int mdns_resolve_addr(const char* hostname, Address* addr) {
+   char addr_string[ADDRSTRLEN];
+   struct timeval tv = {1, 0};
+   fd_set rfds;
+-  int maxfd, send_retry, recv_retry, size, ret;
++  PeerSocket maxfd;
++  int send_retry, recv_retry, size, ret;
+ 
+   if (udp_socket_open(&udp_socket, AF_INET, MDNS_PORT) < 0) {
+     LOGE("Failed to create socket");
+@@ -144,7 +147,7 @@ int mdns_resolve_addr(const char* hostname, Address* addr) {
+     udp_socket_sendto(&udp_socket, &mcast_addr, buf, size);
+     for (recv_retry = 5; recv_retry > 0; recv_retry--) {
+       FD_SET(udp_socket.fd, &rfds);
+-      ret = select(maxfd + 1, &rfds, NULL, NULL, &tv);
++      ret = select(PEER_SELECT_NFDS(maxfd), &rfds, NULL, NULL, &tv);
+ 
+       if (ret < 0) {
+         LOGE("select error");
+diff --git a/src/peer.c b/src/peer.c
+index 7d4cd98..d140644 100644
+--- a/src/peer.c
++++ b/src/peer.c
+@@ -1,7 +1,9 @@
+ #include <srtp.h>
+ #include <stdio.h>
+ #include <stdlib.h>
++#ifndef _WIN32
+ #include <unistd.h>
++#endif
+ 
+ #include "peer.h"
+ #include "sctp.h"
+diff --git a/src/peer_connection.c b/src/peer_connection.c
+index 665b1eb..edbdc98 100644
+--- a/src/peer_connection.c
++++ b/src/peer_connection.c
+@@ -4,7 +4,9 @@
+ #include <stdlib.h>
+ #include <stdarg.h>
+ #include <time.h>
++#ifndef _WIN32
+ #include <unistd.h>
++#endif
+ 
+ #include "agent.h"
+ #include "config.h"
+@@ -122,11 +124,15 @@ static void peer_connection_debug_log(const char* format, ...) {
+ #endif
+ 
+ static uint64_t peer_connection_monotonic_us(void) {
++#ifdef _WIN32
++  return ports_get_monotonic_us();
++#else
+   struct timespec now;
+   if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+     return (uint64_t)now.tv_sec * 1000000u + (uint64_t)now.tv_nsec / 1000u;
+   }
+   return (uint64_t)ports_get_epoch_time() * 1000u;
++#endif
+ }
+ 
+ static void peer_connection_note_remote_activity(PeerConnection* pc) {
+diff --git a/src/peer_signaling.c b/src/peer_signaling.c
+index f5dbd83..fd39beb 100644
+--- a/src/peer_signaling.c
++++ b/src/peer_signaling.c
+@@ -3,7 +3,9 @@
+ #include <cJSON.h>
+ #include <signal.h>
+ #include <string.h>
++#ifndef _WIN32
+ #include <unistd.h>
++#endif
+ 
+ #include <core_http_client.h>
+ #include <core_mqtt.h>
+diff --git a/src/ports.c b/src/ports.c
+index 350c51e..042c651 100644
+--- a/src/ports.c
++++ b/src/ports.c
+@@ -1,8 +1,12 @@
+ #include <errno.h>
+ #include <string.h>
++#include <time.h>
++#include "socket_compat.h"
++#ifndef _WIN32
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <unistd.h>
++#endif
+ 
+ #ifdef __SWITCH__
+ #include <switch.h>
+@@ -15,6 +19,8 @@
+ #include "lwip/netdb.h"
+ #include "lwip/netif.h"
+ #include "lwip/sys.h"
++#elif defined(_WIN32)
++#include <iphlpapi.h>
+ #else
+ #include <ifaddrs.h>
+ #include <net/if.h>
+@@ -110,7 +116,89 @@ int ports_get_host_addr(Address* addr, const char* iface_prefix) {
+     }
+   }
+ #else
++#ifdef _WIN32
++  ULONG adapter_buffer_size = 16 * 1024;
++  IP_ADAPTER_ADDRESSES* adapters =
++      (IP_ADAPTER_ADDRESSES*)malloc(adapter_buffer_size);
++  if (!adapters) {
++    errno = ENOMEM;
++    return -1;
++  }
++
++  ULONG status = GetAdaptersAddresses(
++      AF_UNSPEC,
++      GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
++          GAA_FLAG_SKIP_DNS_SERVER,
++      NULL,
++      adapters,
++      &adapter_buffer_size);
++  if (status == ERROR_BUFFER_OVERFLOW) {
++    IP_ADAPTER_ADDRESSES* resized =
++        (IP_ADAPTER_ADDRESSES*)realloc(adapters, adapter_buffer_size);
++    if (!resized) {
++      free(adapters);
++      errno = ENOMEM;
++      return -1;
++    }
++    adapters = resized;
++    status = GetAdaptersAddresses(
++        AF_UNSPEC,
++        GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
++            GAA_FLAG_SKIP_DNS_SERVER,
++        NULL,
++        adapters,
++        &adapter_buffer_size);
++  }
++  if (status != NO_ERROR) {
++    free(adapters);
++    errno = EIO;
++    LOGE("GetAdaptersAddresses failed: %lu", (unsigned long)status);
++    return -1;
++  }
++
++  const size_t iface_prefix_length =
++      iface_prefix ? strlen(iface_prefix) : 0;
++  for (IP_ADAPTER_ADDRESSES* adapter = adapters;
++       adapter != NULL && !ret;
++       adapter = adapter->Next) {
++    if (adapter->OperStatus != IfOperStatusUp ||
++        adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
++      continue;
++    }
++    if (iface_prefix_length != 0 &&
++        strncmp(adapter->AdapterName, iface_prefix,
++                iface_prefix_length) != 0) {
++      continue;
++    }
++
++    for (IP_ADAPTER_UNICAST_ADDRESS* unicast = adapter->FirstUnicastAddress;
++         unicast != NULL;
++         unicast = unicast->Next) {
++      if (!unicast->Address.lpSockaddr ||
++          unicast->Address.lpSockaddr->sa_family != addr->family) {
++        continue;
++      }
+ 
++      if (addr->family == AF_INET6) {
++        const struct sockaddr_in6* candidate =
++            (const struct sockaddr_in6*)unicast->Address.lpSockaddr;
++        if (IN6_IS_ADDR_UNSPECIFIED(&candidate->sin6_addr) ||
++            IN6_IS_ADDR_LOOPBACK(&candidate->sin6_addr) ||
++            IN6_IS_ADDR_LINKLOCAL(&candidate->sin6_addr)) {
++          continue;
++        }
++        memcpy(&addr->sin6, candidate, sizeof(*candidate));
++      } else {
++        const struct sockaddr_in* candidate =
++            (const struct sockaddr_in*)unicast->Address.lpSockaddr;
++        memcpy(&addr->sin, candidate, sizeof(*candidate));
++      }
++      ret = 1;
++      break;
++    }
++  }
++  free(adapters);
++#else
+   struct ifaddrs *ifaddr, *ifa;
+ 
+   if (getifaddrs(&ifaddr) == -1) {
+@@ -169,6 +257,7 @@ int ports_get_host_addr(Address* addr, const char* iface_prefix) {
+     break;
+   }
+   freeifaddrs(ifaddr);
++#endif
+ #endif
+   return ret;
+ }
+@@ -211,14 +300,39 @@ int ports_resolve_addr(const char* host, Address* addr) {
+ }
+ 
+ uint32_t ports_get_epoch_time() {
++#ifdef _WIN32
++  return (uint32_t)GetTickCount64();
++#else
+   struct timeval tv;
+   gettimeofday(&tv, NULL);
+   return (uint32_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
++#endif
++}
++
++uint64_t ports_get_monotonic_us() {
++#ifdef _WIN32
++  LARGE_INTEGER frequency;
++  LARGE_INTEGER counter;
++  if (!QueryPerformanceFrequency(&frequency) ||
++      !QueryPerformanceCounter(&counter) || frequency.QuadPart <= 0) {
++    return (uint64_t)GetTickCount64() * 1000u;
++  }
++  return (uint64_t)((counter.QuadPart * 1000000ULL) / frequency.QuadPart);
++#else
++  struct timespec now;
++  if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
++    return (uint64_t)now.tv_sec * 1000000u +
++           (uint64_t)now.tv_nsec / 1000u;
++  }
++  return (uint64_t)ports_get_epoch_time() * 1000u;
++#endif
+ }
+ 
+ void ports_sleep_ms(int ms) {
+ #if CONFIG_USE_LWIP
+   sys_msleep(ms);
++#elif defined(_WIN32)
++  Sleep(ms > 0 ? (DWORD)ms : 0);
+ #else
+   usleep(ms * 1000);
+ #endif
+diff --git a/src/ports.h b/src/ports.h
+index 3c2c84d..47f9989 100644
+--- a/src/ports.h
++++ b/src/ports.h
+@@ -12,6 +12,8 @@ int ports_get_host_addr(Address* addr, const char* iface_prefix);
+ 
+ uint32_t ports_get_epoch_time();
+ 
++uint64_t ports_get_monotonic_us();
++
+ void ports_sleep_ms(int ms);
+ 
+ #endif  // PORTS_H_
+diff --git a/src/rtp.h b/src/rtp.h
+index f1ac40e..444d6e1 100644
+--- a/src/rtp.h
++++ b/src/rtp.h
+@@ -54,13 +54,12 @@ typedef struct RtpHeader {
+   uint16_t seq_number;
+   uint32_t timestamp;
+   uint32_t ssrc;
+-  uint32_t csrc[0];
+ 
+ } RtpHeader;
+ 
+ typedef struct RtpPacket {
+   RtpHeader header;
+-  uint8_t payload[0];
++  uint8_t payload[];
+ 
+ } RtpPacket;
+ 
+diff --git a/src/sctp.c b/src/sctp.c
+index 594f21d..b4b8a36 100644
+--- a/src/sctp.c
++++ b/src/sctp.c
+@@ -353,7 +353,10 @@ void sctp_parse_data_channel_open(Sctp* sctp, uint16_t sid, char* data, size_t l
+     char* label = (char*)(data + 12);
+ 
+     // copy and null-terminate
+-    char label_str[label_length + 1];
++    char* label_str = (char*)malloc((size_t)label_length + 1);
++    if (!label_str) {
++      return;
++    }
+     memcpy(label_str, label, label_length);
+     label_str[label_length] = '\0';
+ 
+@@ -365,6 +368,7 @@ void sctp_parse_data_channel_open(Sctp* sctp, uint16_t sid, char* data, size_t l
+                             reliability_parameter);
+     char ack = DATA_CHANNEL_ACK;
+     sctp_outgoing_data(sctp, &ack, 1, PPID_CONTROL, sid);
++    free(label_str);
+   }
+ }
+ 
+@@ -471,7 +475,7 @@ void sctp_incoming_data(Sctp* sctp, char* buf, size_t len) {
+         init_ack->number_of_inbound_streams = 0xffff;
+         init_ack->initial_tsn = htonl(sctp->tsn);
+ 
+-        SctpChunkParam* param = init_ack->param;
++        SctpChunkParam* param = (SctpChunkParam*)init_ack->param;
+ 
+         param->type = htons(SCTP_PARAM_STATE_COOKIE);
+         param->length = htons(8);
+diff --git a/src/sctp.h b/src/sctp.h
+index 6aa486a..274fdda 100644
+--- a/src/sctp.h
++++ b/src/sctp.h
+@@ -27,7 +27,7 @@ typedef enum DataChannelPpid {
+ typedef struct SctpChunkParam {
+   uint16_t type;
+   uint16_t length;
+-  uint8_t value[0];
++  uint8_t value[];
+ 
+ } SctpChunkParam;
+ 
+@@ -86,7 +86,7 @@ typedef struct SctpHeader {
+ 
+ typedef struct SctpPacket {
+   SctpHeader header;
+-  uint8_t chunks[0];
++  uint8_t chunks[];
+ 
+ } SctpPacket;
+ 
+@@ -96,7 +96,7 @@ typedef struct SctpSackChunk {
+   uint32_t a_rwnd;
+   uint16_t number_of_gap_ack_blocks;
+   uint16_t number_of_dup_tsns;
+-  uint8_t blocks[0];
++  uint8_t blocks[];
+ 
+ } SctpSackChunk;
+ 
+@@ -108,7 +108,7 @@ typedef struct SctpDataChunk {
+   uint16_t sid;
+   uint16_t sqn;
+   uint32_t ppid;
+-  uint8_t data[0];
++  uint8_t data[];
+ 
+ } SctpDataChunk;
+ 
+@@ -119,13 +119,13 @@ typedef struct SctpInitChunk {
+   uint16_t number_of_outbound_streams;
+   uint16_t number_of_inbound_streams;
+   uint32_t initial_tsn;
+-  SctpChunkParam param[0];
++  uint8_t param[];
+ 
+ } SctpInitChunk;
+ 
+ typedef struct SctpCookieEchoChunk {
+   SctpChunkCommon common;
+-  uint8_t cookie[0];
++  uint8_t cookie[];
+ } SctpCookieEchoChunk;
+ 
+ #endif
+diff --git a/src/socket.c b/src/socket.c
+index 5b206e8..39457c0 100644
+--- a/src/socket.c
++++ b/src/socket.c
+@@ -1,6 +1,5 @@
+ #include <errno.h>
+ #include <string.h>
+-#include <unistd.h>
+ 
+ #include "socket.h"
+ #include "utils.h"
+@@ -14,12 +13,14 @@ int udp_socket_add_multicast_group(UdpSocket* udp_socket, Address* mcast_addr) {
+   // IPV4 only
+   imreq.imr_multiaddr.s_addr = mcast_addr->sin.sin_addr.s_addr;
+ 
+-  if ((ret = setsockopt(udp_socket->fd, IPPROTO_IP, IP_MULTICAST_IF, &iaddr, sizeof(struct in_addr))) < 0) {
++  if ((ret = peer_setsockopt(udp_socket->fd, IPPROTO_IP, IP_MULTICAST_IF, &iaddr, sizeof(struct in_addr))) < 0) {
++    peer_socket_capture_error();
+     LOGE("Failed to set IP_MULTICAST_IF: %d", ret);
+     return ret;
+   }
+ 
+-  if ((ret = setsockopt(udp_socket->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imreq, sizeof(struct ip_mreq))) < 0) {
++  if ((ret = peer_setsockopt(udp_socket->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imreq, sizeof(struct ip_mreq))) < 0) {
++    peer_socket_capture_error();
+     LOGE("Failed to set IP_ADD_MEMBERSHIP: %d", ret);
+     return ret;
+   }
+@@ -35,6 +36,7 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+   struct sockaddr* sa;
+   socklen_t sock_len;
+ 
++  udp_socket->fd = PEER_INVALID_SOCKET;
+   udp_socket->bind_addr.family = family;
+   udp_socket->receive_buffer_size = 0;
+   udp_socket->last_send_error = 0;
+@@ -59,13 +61,22 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+       break;
+   }
+ 
+-  if (udp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(udp_socket->fd)) {
++    peer_socket_capture_error();
+     LOGE("Failed to create socket");
+     return -1;
+   }
+ 
++  if (peer_socket_set_nonblocking(udp_socket->fd) < 0) {
++    peer_socket_capture_error();
++    LOGE("Failed to set UDP socket nonblocking");
++    udp_socket_close(udp_socket);
++    return -1;
++  }
++
+   do {
+-    if ((ret = setsockopt(udp_socket->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) < 0) {
++    if ((ret = peer_setsockopt(udp_socket->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) < 0) {
++      peer_socket_capture_error();
+       LOGW("reuse failed. ignore");
+     }
+ 
+@@ -74,23 +85,27 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+     // decoding the previous access unit.  This is a best-effort hint: some
+     // targets clamp or reject large socket buffers, but that must not prevent
+     // the ICE socket from opening.
+-    if (setsockopt(udp_socket->fd, SOL_SOCKET, SO_RCVBUF,
++    if (peer_setsockopt(udp_socket->fd, SOL_SOCKET, SO_RCVBUF,
+                    &receive_buffer, sizeof(receive_buffer)) < 0) {
++      peer_socket_capture_error();
+       LOGW("receive buffer setup failed. ignore");
+     }
+-    if (getsockopt(udp_socket->fd, SOL_SOCKET, SO_RCVBUF,
++    if (peer_getsockopt(udp_socket->fd, SOL_SOCKET, SO_RCVBUF,
+                    &udp_socket->receive_buffer_size,
+                    &receive_buffer_len) < 0) {
++      peer_socket_capture_error();
+       udp_socket->receive_buffer_size = 0;
+       LOGW("receive buffer query failed. ignore");
+     }
+ 
+-    if ((ret = bind(udp_socket->fd, sa, sock_len)) < 0) {
++    if ((ret = peer_bind(udp_socket->fd, sa, sock_len)) < 0) {
++      peer_socket_capture_error();
+       LOGE("Failed to bind socket: %d", ret);
+       break;
+     }
+ 
+-    if (getsockname(udp_socket->fd, sa, &sock_len) < 0) {
++    if (peer_getsockname(udp_socket->fd, sa, &sock_len) < 0) {
++      peer_socket_capture_error();
+       LOGE("Get socket info failed");
+       break;
+     }
+@@ -115,8 +130,9 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+ }
+ 
+ void udp_socket_close(UdpSocket* udp_socket) {
+-  if (udp_socket->fd > 0) {
+-    close(udp_socket->fd);
++  if (PEER_SOCKET_VALID(udp_socket->fd)) {
++    peer_socket_close(udp_socket->fd);
++    udp_socket->fd = PEER_INVALID_SOCKET;
+   }
+ }
+ 
+@@ -125,7 +141,7 @@ int udp_socket_sendto(UdpSocket* udp_socket, Address* addr, const uint8_t* buf,
+   socklen_t sock_len;
+   int ret = -1;
+ 
+-  if (udp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(udp_socket->fd)) {
+     udp_socket->last_send_error = EBADF;
+     LOGE("sendto before socket init");
+     return -1;
+@@ -145,7 +161,8 @@ int udp_socket_sendto(UdpSocket* udp_socket, Address* addr, const uint8_t* buf,
+       break;
+   }
+ 
+-  if ((ret = sendto(udp_socket->fd, buf, len, 0, sa, sock_len)) < 0) {
++  if ((ret = peer_sendto(udp_socket->fd, buf, len, 0, sa, sock_len)) < 0) {
++    peer_socket_capture_error();
+     const int send_error = errno;
+     udp_socket->last_send_error = send_error;
+     LOGE("Failed to sendto: %s", strerror(send_error));
+@@ -173,7 +190,7 @@ static int udp_socket_recvfrom_with_flags(UdpSocket* udp_socket,
+   socklen_t sock_len;
+   int ret;
+ 
+-  if (udp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(udp_socket->fd)) {
+     LOGE("recvfrom before socket init");
+     return -1;
+   }
+@@ -192,7 +209,8 @@ static int udp_socket_recvfrom_with_flags(UdpSocket* udp_socket,
+       break;
+   }
+ 
+-  if ((ret = recvfrom(udp_socket->fd, buf, len, flags, sa, &sock_len)) < 0) {
++  if ((ret = peer_recvfrom(udp_socket->fd, buf, len, flags, sa, &sock_len)) < 0) {
++    peer_socket_capture_error();
+     if (allow_would_block && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+       return 0;
+     }
+@@ -228,11 +246,12 @@ int udp_socket_recvfrom_nonblocking(UdpSocket* udp_socket,
+                                     uint8_t* buf,
+                                     int len) {
+   return udp_socket_recvfrom_with_flags(
+-      udp_socket, addr, buf, len, MSG_DONTWAIT, 1);
++      udp_socket, addr, buf, len, PEER_NONBLOCKING_RECV_FLAG, 1);
+ }
+ 
+ int tcp_socket_open(TcpSocket* tcp_socket, int family) {
+   tcp_socket->bind_addr.family = family;
++  tcp_socket->fd = PEER_INVALID_SOCKET;
+   switch (family) {
+     case AF_INET6:
+       tcp_socket->fd = socket(AF_INET6, SOCK_STREAM, 0);
+@@ -243,7 +262,8 @@ int tcp_socket_open(TcpSocket* tcp_socket, int family) {
+       break;
+   }
+ 
+-  if (tcp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(tcp_socket->fd)) {
++    peer_socket_capture_error();
+     LOGE("Failed to create socket");
+     return -1;
+   }
+@@ -256,7 +276,7 @@ int tcp_socket_connect(TcpSocket* tcp_socket, Address* addr) {
+   struct sockaddr* sa;
+   socklen_t sock_len;
+ 
+-  if (tcp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(tcp_socket->fd)) {
+     LOGE("Connect before socket init");
+     return -1;
+   }
+@@ -277,7 +297,8 @@ int tcp_socket_connect(TcpSocket* tcp_socket, Address* addr) {
+ 
+   addr_to_string(addr, addr_string, sizeof(addr_string));
+   LOGI("Connecting to server: %s:%d", addr_string, addr->port);
+-  if ((ret = connect(tcp_socket->fd, sa, sock_len)) < 0) {
++  if ((ret = peer_connect(tcp_socket->fd, sa, sock_len)) < 0) {
++    peer_socket_capture_error();
+     LOGE("Failed to connect to server");
+     return -1;
+   }
+@@ -287,21 +308,23 @@ int tcp_socket_connect(TcpSocket* tcp_socket, Address* addr) {
+ }
+ 
+ void tcp_socket_close(TcpSocket* tcp_socket) {
+-  if (tcp_socket->fd > 0) {
+-    close(tcp_socket->fd);
++  if (PEER_SOCKET_VALID(tcp_socket->fd)) {
++    peer_socket_close(tcp_socket->fd);
++    tcp_socket->fd = PEER_INVALID_SOCKET;
+   }
+ }
+ 
+ int tcp_socket_send(TcpSocket* tcp_socket, const uint8_t* buf, int len) {
+   int ret;
+ 
+-  if (tcp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(tcp_socket->fd)) {
+     LOGE("sendto before socket init");
+     return -1;
+   }
+ 
+-  ret = send(tcp_socket->fd, buf, len, 0);
++  ret = peer_send(tcp_socket->fd, buf, len, 0);
+   if (ret < 0) {
++    peer_socket_capture_error();
+     LOGE("Failed to send: %s", strerror(errno));
+     return -1;
+   }
+@@ -311,13 +334,14 @@ int tcp_socket_send(TcpSocket* tcp_socket, const uint8_t* buf, int len) {
+ int tcp_socket_recv(TcpSocket* tcp_socket, uint8_t* buf, int len) {
+   int ret;
+ 
+-  if (tcp_socket->fd < 0) {
++  if (!PEER_SOCKET_VALID(tcp_socket->fd)) {
+     LOGE("recvfrom before socket init");
+     return -1;
+   }
+ 
+-  ret = recv(tcp_socket->fd, buf, len, 0);
++  ret = peer_recv(tcp_socket->fd, buf, len, 0);
+   if (ret < 0) {
++    peer_socket_capture_error();
+     LOGE("Failed to recv: %s", strerror(errno));
+     return -1;
+   }
+diff --git a/src/socket.h b/src/socket.h
+index 43ecb90..354970a 100644
+--- a/src/socket.h
++++ b/src/socket.h
+@@ -2,16 +2,17 @@
+ #define SOCKET_H_
+ 
+ #include "address.h"
++#include "socket_compat.h"
+ 
+ typedef struct UdpSocket {
+-  int fd;
++  PeerSocket fd;
+   int receive_buffer_size;
+   int last_send_error;
+   Address bind_addr;
+ } UdpSocket;
+ 
+ typedef struct TcpSocket {
+-  int fd;
++  PeerSocket fd;
+   Address bind_addr;
+ } TcpSocket;
+ 
+diff --git a/src/socket_compat.h b/src/socket_compat.h
+new file mode 100644
+index 0000000..624252e
+--- /dev/null
++++ b/src/socket_compat.h
+@@ -0,0 +1,181 @@
++#ifndef SOCKET_COMPAT_H_
++#define SOCKET_COMPAT_H_
++
++#include <stdint.h>
++
++#ifdef _WIN32
++
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++
++#include <winsock2.h>
++#include <ws2tcpip.h>
++#include <windows.h>
++#include <errno.h>
++
++typedef int socklen_t;
++typedef SOCKET PeerSocket;
++
++#define PEER_INVALID_SOCKET INVALID_SOCKET
++#define PEER_SOCKET_VALID(socket_fd) ((socket_fd) != INVALID_SOCKET)
++#define PEER_SELECT_NFDS(max_socket) 0
++#define PEER_NONBLOCKING_RECV_FLAG 0
++
++static inline int peer_socket_close(PeerSocket socket_fd) {
++  return closesocket(socket_fd);
++}
++
++static inline int peer_socket_set_nonblocking(PeerSocket socket_fd) {
++  u_long enabled = 1;
++  return ioctlsocket(socket_fd, FIONBIO, &enabled);
++}
++
++static inline void peer_socket_capture_error(void) {
++  const int error = WSAGetLastError();
++  switch (error) {
++    case WSAEWOULDBLOCK:
++      errno = EWOULDBLOCK;
++      break;
++    case WSAEINTR:
++      errno = EINTR;
++      break;
++    case WSAENOBUFS:
++      errno = ENOBUFS;
++      break;
++    case WSAEBADF:
++      errno = EBADF;
++      break;
++    case WSAEACCES:
++      errno = EACCES;
++      break;
++    case WSAEADDRINUSE:
++      errno = EADDRINUSE;
++      break;
++    case WSAEADDRNOTAVAIL:
++      errno = EADDRNOTAVAIL;
++      break;
++    case WSAENETUNREACH:
++      errno = ENETUNREACH;
++      break;
++    case WSAECONNRESET:
++      errno = ECONNRESET;
++      break;
++    case WSAECONNREFUSED:
++      errno = ECONNREFUSED;
++      break;
++    case WSAETIMEDOUT:
++      errno = ETIMEDOUT;
++      break;
++    default:
++      errno = EIO;
++      break;
++  }
++}
++
++static inline int peer_setsockopt(PeerSocket socket_fd,
++                                  int level,
++                                  int option,
++                                  const void* value,
++                                  socklen_t value_length) {
++  return setsockopt(socket_fd, level, option, (const char*)value,
++                    value_length);
++}
++
++static inline int peer_getsockopt(PeerSocket socket_fd,
++                                  int level,
++                                  int option,
++                                  void* value,
++                                  socklen_t* value_length) {
++  return getsockopt(socket_fd, level, option, (char*)value, value_length);
++}
++
++static inline int peer_bind(PeerSocket socket_fd,
++                            const struct sockaddr* address,
++                            socklen_t address_length) {
++  return bind(socket_fd, address, address_length);
++}
++
++static inline int peer_getsockname(PeerSocket socket_fd,
++                                   struct sockaddr* address,
++                                   socklen_t* address_length) {
++  return getsockname(socket_fd, address, address_length);
++}
++
++static inline int peer_connect(PeerSocket socket_fd,
++                               const struct sockaddr* address,
++                               socklen_t address_length) {
++  return connect(socket_fd, address, address_length);
++}
++
++static inline int peer_sendto(PeerSocket socket_fd,
++                              const uint8_t* buffer,
++                              int length,
++                              int flags,
++                              const struct sockaddr* address,
++                              socklen_t address_length) {
++  return sendto(socket_fd, (const char*)buffer, length, flags,
++                address, address_length);
++}
++
++static inline int peer_recvfrom(PeerSocket socket_fd,
++                                uint8_t* buffer,
++                                int length,
++                                int flags,
++                                struct sockaddr* address,
++                                socklen_t* address_length) {
++  return recvfrom(socket_fd, (char*)buffer, length, flags,
++                  address, address_length);
++}
++
++static inline int peer_send(PeerSocket socket_fd,
++                            const uint8_t* buffer,
++                            int length,
++                            int flags) {
++  return send(socket_fd, (const char*)buffer, length, flags);
++}
++
++static inline int peer_recv(PeerSocket socket_fd,
++                            uint8_t* buffer,
++                            int length,
++                            int flags) {
++  return recv(socket_fd, (char*)buffer, length, flags);
++}
++
++#else
++
++#include <arpa/inet.h>
++#include <sys/socket.h>
++#include <sys/select.h>
++#include <unistd.h>
++
++typedef int PeerSocket;
++
++#define PEER_INVALID_SOCKET (-1)
++#define PEER_SOCKET_VALID(socket_fd) ((socket_fd) >= 0)
++#define PEER_SELECT_NFDS(max_socket) ((max_socket) + 1)
++#define PEER_NONBLOCKING_RECV_FLAG MSG_DONTWAIT
++
++static inline int peer_socket_close(PeerSocket socket_fd) {
++  return close(socket_fd);
++}
++
++static inline int peer_socket_set_nonblocking(PeerSocket socket_fd) {
++  (void)socket_fd;
++  return 0;
++}
++
++#define peer_socket_capture_error() ((void)0)
++#define peer_setsockopt setsockopt
++#define peer_getsockopt getsockopt
++#define peer_bind bind
++#define peer_getsockname getsockname
++#define peer_connect connect
++#define peer_sendto sendto
++#define peer_recvfrom recvfrom
++#define peer_send send
++#define peer_recv recv
++
++#endif
++
++#endif
+diff --git a/src/ssl_transport.c b/src/ssl_transport.c
+index 9847616..e5fc56a 100644
+--- a/src/ssl_transport.c
++++ b/src/ssl_transport.c
+@@ -8,7 +8,9 @@
+ #include "mbedtls/entropy.h"
+ #include "mbedtls/ssl.h"
+ 
++#ifndef _WIN32
+ #include <sys/select.h>
++#endif
+ #include "config.h"
+ #include "ports.h"
+ #include "ssl_transport.h"
+@@ -24,7 +26,8 @@ static int ssl_transport_mbedtls_recv_timeout(void* ctx, unsigned char* buf, siz
+   FD_ZERO(&read_fds);
+   FD_SET(((TcpSocket*)ctx)->fd, &read_fds);
+ 
+-  ret = select(((TcpSocket*)ctx)->fd + 1, &read_fds, NULL, NULL, &tv);
++  ret = select(PEER_SELECT_NFDS(((TcpSocket*)ctx)->fd),
++               &read_fds, NULL, NULL, &tv);
+   if (ret < 0) {
+     return -1;
+   } else if (ret == 0) {
+diff --git a/src/stun.c b/src/stun.c
+index 994d409..564b928 100644
+--- a/src/stun.c
++++ b/src/stun.c
+@@ -2,7 +2,9 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#ifndef _WIN32
+ #include <unistd.h>
++#endif
+ 
+ #include "stun.h"
+ #include "utils.h"
+diff --git a/src/stun.h b/src/stun.h
+index c0f9618..94f27ed 100644
+--- a/src/stun.h
++++ b/src/stun.h
+@@ -80,7 +80,7 @@ struct StunHeader {
+ struct StunAttribute {
+   uint16_t type;
+   uint16_t length;
+-  char value[0];
++  char value[];
+ };
+ 
+ struct StunMessage {
+diff --git a/third_party/libsrtp b/third_party/libsrtp
+--- a/third_party/libsrtp
++++ b/third_party/libsrtp
+@@ -1 +1 @@
+-Subproject commit 90d05bf8980d16e4ac3f16c19b77e296c4bc207b
++Subproject commit 90d05bf8980d16e4ac3f16c19b77e296c4bc207b-dirty
+diff --git a/third_party/mbedtls b/third_party/mbedtls
+--- a/third_party/mbedtls
++++ b/third_party/mbedtls
+@@ -1 +1 @@
+-Subproject commit 1873d3bfc2da771672bd8e7e8f41f57e0af77f33
++Subproject commit 1873d3bfc2da771672bd8e7e8f41f57e0af77f33-dirty
+diff --git a/third_party/usrsctp b/third_party/usrsctp
+--- a/third_party/usrsctp
++++ b/third_party/usrsctp
+@@ -1 +1 @@
+-Subproject commit 01cc4e042e2235b29d9d489d89728a6f9ac063ed
++Subproject commit 01cc4e042e2235b29d9d489d89728a6f9ac063ed-dirty

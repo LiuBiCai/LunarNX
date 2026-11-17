@@ -5,7 +5,6 @@
     "curl",
     "ffmpeg",
     "libsrtp",
-    "mbedtls",
     "openssl",
     "opus",
     "sdl2"

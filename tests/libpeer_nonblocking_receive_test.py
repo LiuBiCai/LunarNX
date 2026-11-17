@@ -14,19 +14,27 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     socket_header = (ROOT / "lib/libpeer/src/socket.h").read_text()
     socket_source = (ROOT / "lib/libpeer/src/socket.c").read_text()
+    socket_compat = (ROOT / "lib/libpeer/src/socket_compat.h").read_text()
     agent_header = (ROOT / "lib/libpeer/src/agent.h").read_text()
     agent_source = (ROOT / "lib/libpeer/src/agent.c").read_text()
     peer_source = (ROOT / "lib/libpeer/src/peer_connection.c").read_text()
     tracked_patch = (
         ROOT / "tools/libpeer_legacy/legacy-libpeer-switch.patch"
     ).read_text()
+    windows_patch = (
+        ROOT / "tools/libpeer_legacy/0004-windows-winsock.patch"
+    ).read_text()
 
     require("udp_socket_recvfrom_nonblocking" in socket_header,
             "UDP sockets must expose a completed-state nonblocking receive")
-    require("MSG_DONTWAIT" in socket_source and
+    require("PEER_NONBLOCKING_RECV_FLAG" in socket_source and
+            "MSG_DONTWAIT" in socket_compat and
             "EAGAIN" in socket_source and
             "EWOULDBLOCK" in socket_source,
             "Nonblocking receive must stop quietly when the socket is empty")
+    require("ioctlsocket" in socket_compat and
+            "PEER_NONBLOCKING_RECV_FLAG" in windows_patch,
+            "Windows UDP receive must use Winsock nonblocking mode")
     require("agent_recv_nonblocking" in agent_header and
             "int* datagram_received" in agent_header,
             "Agent receive must report every raw UDP datagram against the budget")

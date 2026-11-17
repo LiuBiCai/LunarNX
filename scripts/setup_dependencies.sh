@@ -76,7 +76,8 @@ for libpeer_patch in \
     "$libpeer_patch_dir/0001-switch-adapt-libpeer-WebRTC-path.patch" \
     "$libpeer_patch_dir/0002-fix-H264-access-unit-flush-and-quiet-SCTP-logs.patch" \
     "$libpeer_patch_dir/legacy-libpeer-switch.patch" \
-    "$libpeer_patch_dir/0003-enable-usrsctp-datachannel-policy.patch"
+    "$libpeer_patch_dir/0003-enable-usrsctp-datachannel-policy.patch" \
+    "$libpeer_patch_dir/0004-windows-winsock.patch"
 do
     if git -C "$libpeer_dir" apply --reverse --check "$libpeer_patch" >/dev/null 2>&1; then
         printf 'LunarNX libpeer patch is already applied: %s\n' "$(basename "$libpeer_patch")"

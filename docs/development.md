@@ -72,30 +72,39 @@ Additional diagnostic targets include `sdp_probe`, `xcloud_handshake_probe`, and
 
 ### Windows Xbox CLI
 
-The Windows build uses CMake, MSVC, and vcpkg. Install Visual Studio 2022 Build
-Tools with the C++ workload, Git for Windows (including Git Bash), CMake, and
-vcpkg. Set `VCPKG_ROOT` to the vcpkg checkout. From Git Bash, fetch the pinned
-local dependencies:
+This workspace is configured for the installed Visual Studio Community 2022
+x64 MSVC toolchain, Windows SDK, and vcpkg at `VCPKG_ROOT`. VS Code's CMake
+Tools extension can select the checked-in `windows-msvc` configure preset and
+`windows-msvc-release` build preset. The Visual Studio CMake generator locates
+MSVC automatically; `cl.exe` does not need to be added to the regular terminal
+`PATH`.
+
+If configuring from a terminal, use PowerShell with CMake and Git for Windows
+installed. Set `VCPKG_ROOT` if it is not already set. Fetch the pinned local
+dependencies from Git Bash:
 
 ```sh
 bash scripts/setup_dependencies.sh
 ```
 
-Then configure and build from a Visual Studio Developer PowerShell:
+Then configure and build:
 
 ```powershell
-cmake -S . -B build/windows `
-  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
-  -DVCPKG_TARGET_TRIPLET=x64-windows `
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build/windows --config Release --target LunarNX_Desktop
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc-release
 ```
 
-The vcpkg manifest installs SDL2, FFmpeg, Opus, curl, OpenSSL, Mbed TLS, and
-libsrtp. Run `build/windows/Release/LunarNX_Desktop.exe` from a console. The
+The vcpkg manifest installs SDL2, FFmpeg, Opus, curl, OpenSSL, and libsrtp.
+Mbed TLS is built from libpeer's patched submodule so DTLS-SRTP remains enabled.
+Run `build/windows-msvc/Release/LunarNX_Desktop.exe` from a console. The
 current CLI flow supports Xbox Remote Play. Xbox Cloud and PlayStation flows,
 along with the full graphical application, are not part of this first Windows
 target.
+
+The dependency setup applies the tracked `0004-windows-winsock.patch` to the
+legacy libpeer checkout. The Windows target initializes Winsock, uses
+`GetAdaptersAddresses()` for host ICE candidates, and currently uses libpeer's
+built-in SCTP implementation rather than usrsctp.
 
 ## Validation
 

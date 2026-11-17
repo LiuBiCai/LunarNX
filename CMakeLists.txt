@@ -258,16 +258,34 @@ else()
     find_path(AVCODEC_INCLUDE libavcodec/avcodec.h REQUIRED)
     find_path(AVUTIL_INCLUDE libavutil/frame.h REQUIRED)
     find_path(OPUS_INCLUDE opus/opus_multistream.h REQUIRED)
-    find_path(MBEDTLS_INCLUDE mbedtls/ssl.h REQUIRED)
     find_path(SRTP2_INCLUDE srtp2/srtp.h REQUIRED)
-    find_library(MBEDTLS_LIBRARY mbedtls
-        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
-    find_library(MBEDCRYPTO_LIBRARY mbedcrypto
-        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
-    find_library(MBEDX509_LIBRARY mbedx509
-        HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
     find_library(SRTP2_LIBRARY srtp2
         HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+
+    if(WIN32)
+        set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+        set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+        set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+        set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+        add_subdirectory(
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/libpeer/third_party/mbedtls"
+            "${CMAKE_CURRENT_BINARY_DIR}/libpeer-mbedtls"
+            EXCLUDE_FROM_ALL
+        )
+        set(MBEDTLS_INCLUDE
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/libpeer/third_party/mbedtls/include")
+        set(MBEDTLS_LIBRARY MbedTLS::mbedtls)
+        set(MBEDCRYPTO_LIBRARY MbedTLS::mbedcrypto)
+        set(MBEDX509_LIBRARY MbedTLS::mbedx509)
+    else()
+        find_path(MBEDTLS_INCLUDE mbedtls/ssl.h REQUIRED)
+        find_library(MBEDTLS_LIBRARY mbedtls
+            HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+        find_library(MBEDCRYPTO_LIBRARY mbedcrypto
+            HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+        find_library(MBEDX509_LIBRARY mbedx509
+            HINTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/build/dist/lib" REQUIRED)
+    endif()
 
     add_executable(LunarNX_Desktop ${LUNARNX_SOURCES})
 
@@ -287,9 +305,9 @@ else()
     target_include_directories(LunarNX_Desktop PRIVATE
         src/
         lib/
+        lib/libpeer/src
         lib/libpeer/include
         lib/libpeer/include/sys
-        lib/libpeer/src
         lib/libpeer/build/dist/include
         lib/libpeer/build/dist/include/srtp2
         lib/libpeer/third_party/coreHTTP/source/interface
@@ -299,6 +317,7 @@ else()
         ${OPUS_INCLUDE}
         ${MBEDTLS_INCLUDE}
         ${SRTP2_INCLUDE}
+        ${SRTP2_INCLUDE}/srtp2
     )
     if(APPLE)
         target_compile_options(LunarNX_Desktop PRIVATE
@@ -318,7 +337,7 @@ else()
         ${SRTP2_LIBRARY}
     )
     if(WIN32)
-        target_link_libraries(LunarNX_Desktop PRIVATE ws2_32)
+        target_link_libraries(LunarNX_Desktop PRIVATE ws2_32 iphlpapi)
     endif()
 
     message(STATUS "Desktop target: LunarNX_Desktop")

@@ -106,6 +106,37 @@ directory and reuses the saved credentials, refreshing them when needed. It
 starts Microsoft device-code sign-in only when no usable saved credentials are
 found.
 
+For multiple processes, use a different account profile for each process and
+select the console by its exact name or ID. For example, run each command in a
+separate PowerShell window:
+
+```powershell
+& .\build\windows-msvc\Release\LunarNX_Desktop.exe --profile account1 --console "Living Room Xbox"
+& .\build\windows-msvc\Release\LunarNX_Desktop.exe --profile account2 --console "Bedroom Xbox"
+```
+
+The first launch of each profile requires Microsoft device-code sign-in.
+Subsequent launches reuse its saved credentials. A profile stores its tokens,
+logs, and caches under `<exe directory>\Profile\<name>` and can only be used
+by one process at a time. Launching the executable from another working
+directory still uses the same profile. Profile names are local labels, not
+Microsoft account credentials. They may contain up to 64 ASCII letters, digits,
+`_`, `-`, `.`, `@`, and `+`, but must not end in `.` or be a reserved Windows
+device name. A name appears in the
+directory path, so use a non-identifying label if preferred. Use a different
+Microsoft account in each concurrent profile: the lock cannot detect the same
+account signed into different profiles, and starting a session may clean up
+existing sessions for that account.
+Protect these directories and do not share or commit their token files.
+
+The console list prints IDs. If names are duplicated, specify the ID instead.
+Omit `--console` to select interactively, or omit both options to retain the
+original current-directory token and interactive behavior. To reuse an existing
+login in a new profile, close LunarNX and place the existing `token.json` in
+that profile's directory; do not share the same credentials between concurrently
+running profiles. Profiles created by earlier builds under the working directory
+or `%LOCALAPPDATA%\LunarNX\profiles\profile-<name>` are not moved automatically.
+
 Desktop streaming keyboard controls:
 
 ```text
@@ -119,6 +150,9 @@ For the Windows SDL window, input, and presentation regression test:
 ```powershell
 cmake --build --preset windows-msvc-release --target DesktopSdlTest
 .\build\windows-msvc\Release\DesktopSdlTest.exe
+cmake --build --preset windows-msvc-release --target DesktopOptionsTest
+.\build\windows-msvc\Release\DesktopOptionsTest.exe
+python -X utf8 tests\desktop_profiles_test.py
 ```
 
 The dependency setup applies the tracked `0004-windows-winsock.patch` to the

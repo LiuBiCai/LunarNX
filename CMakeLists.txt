@@ -346,6 +346,9 @@ else()
         target_compile_definitions(DesktopSdlTest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
         target_include_directories(DesktopSdlTest PRIVATE ${AVUTIL_INCLUDE})
         target_link_libraries(DesktopSdlTest PRIVATE SDL2::SDL2 ${AVUTIL_LIB} user32)
+
+        add_executable(DesktopOptionsTest EXCLUDE_FROM_ALL tests/desktop_options_test.cpp)
+        target_compile_definitions(DesktopOptionsTest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     endif()
 
     message(STATUS "Desktop target: LunarNX_Desktop")

@@ -54,6 +54,7 @@ psn_*.json
 debug.log
 *.log
 *.jsonl
+.lunarnx.lock
 
 # Python
 __pycache__/

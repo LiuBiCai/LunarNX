@@ -54,6 +54,9 @@ bool GamepadReader::initialize() {
     {
         std::lock_guard<std::mutex> lock(desktop_state_mutex_);
         desktop_state_ = {};
+        automation_state_ = {};
+        automation_state_updated_ = {};
+        desktop_automation_mode_ = desktop_automation_enabled_;
     }
 #endif
     initialized_ = true;
@@ -149,6 +152,31 @@ GamepadState GamepadReader::read() {
 }
 
 #ifndef __SWITCH__
+void GamepadReader::setDesktopAutomationEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+    desktop_automation_enabled_ = enabled;
+    desktop_automation_mode_ = enabled;
+    automation_state_ = {};
+    automation_state_updated_ = {};
+    desktop_state_ = {};
+}
+
+void GamepadReader::setDesktopAutomationMode(bool enabled) {
+    std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+    if (!desktop_automation_enabled_) return;
+    desktop_automation_mode_ = enabled;
+    automation_state_ = {};
+    automation_state_updated_ = {};
+    desktop_state_ = {};
+}
+
+void GamepadReader::setDesktopAutomationState(const GamepadState& state) {
+    std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+    if (!desktop_automation_enabled_ || !desktop_automation_mode_) return;
+    automation_state_ = state;
+    automation_state_updated_ = std::chrono::steady_clock::now();
+}
+
 void GamepadReader::updateDesktopKeyboard() {
     GamepadState state = {};
     if (SDL_WasInit(SDL_INIT_EVENTS) == 0 && SDL_WasInit(SDL_INIT_VIDEO) == 0) {
@@ -159,7 +187,14 @@ void GamepadReader::updateDesktopKeyboard() {
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
     if (!keys) {
         std::lock_guard<std::mutex> lock(desktop_state_mutex_);
-        desktop_state_ = state;
+        if (desktop_automation_mode_) {
+            const auto age = std::chrono::steady_clock::now() -
+                             automation_state_updated_;
+            desktop_state_ = age <= std::chrono::milliseconds(250)
+                ? automation_state_ : GamepadState{};
+        } else {
+            desktop_state_ = state;
+        }
         return;
     }
 
@@ -194,7 +229,14 @@ void GamepadReader::updateDesktopKeyboard() {
     state.left_trigger  = state.lt ? 65535 : 0;
     state.right_trigger = state.rt ? 65535 : 0;
     std::lock_guard<std::mutex> lock(desktop_state_mutex_);
-    desktop_state_ = state;
+    if (desktop_automation_mode_) {
+        const auto age = std::chrono::steady_clock::now() -
+                         automation_state_updated_;
+        desktop_state_ = age <= std::chrono::milliseconds(250)
+            ? automation_state_ : GamepadState{};
+    } else {
+        desktop_state_ = state;
+    }
 }
 #endif
 

@@ -9,6 +9,8 @@ namespace lunar::desktop {
 struct Options {
     std::string profile;
     std::string console;
+    std::string automation_pipe_name;
+    bool automation = false;
     bool help = false;
 };
 
@@ -18,8 +20,17 @@ inline bool parseOptions(const std::vector<std::string>& args, Options& options,
         const auto& arg = args[i];
         if (arg == "--help" || arg == "-h") {
             options.help = true;
-        } else if (arg == "--profile" || arg == "--console") {
-            auto& value = arg == "--profile" ? options.profile : options.console;
+        } else if (arg == "--automation") {
+            if (options.automation) {
+                error = "Duplicate option: --automation.";
+                return false;
+            }
+            options.automation = true;
+        } else if (arg == "--profile" || arg == "--console" ||
+                   arg == "--pipe-name") {
+            auto& value = arg == "--profile" ? options.profile :
+                          arg == "--console" ? options.console :
+                          options.automation_pipe_name;
             if (!value.empty() || i + 1 == args.size() || args[i + 1].empty() ||
                 args[i + 1].rfind("--", 0) == 0) {
                 error = "Missing or duplicate value for " + arg + ".";
@@ -59,6 +70,32 @@ inline bool parseOptions(const std::vector<std::string>& args, Options& options,
              device[3] >= '1' && device[3] <= '9')) {
             error = "Profile name is a reserved Windows device name.";
             return false;
+        }
+    }
+    if (options.automation && options.profile.empty()) {
+        error = "--automation requires --profile.";
+        return false;
+    }
+    if (options.automation && options.automation_pipe_name.empty()) {
+        error = "--automation requires --pipe-name.";
+        return false;
+    }
+    if (!options.automation && !options.automation_pipe_name.empty()) {
+        error = "--pipe-name requires --automation.";
+        return false;
+    }
+    if (!options.automation_pipe_name.empty()) {
+        if (options.automation_pipe_name.size() > 128) {
+            error = "Pipe name must be at most 128 characters.";
+            return false;
+        }
+        for (const char c : options.automation_pipe_name) {
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+                  c == '.')) {
+                error = "Pipe name may only contain ASCII letters, digits, '_', '-', and '.'.";
+                return false;
+            }
         }
     }
     return true;

@@ -205,6 +205,9 @@ else()
         src/platform/network_worker.cpp
         lib/stubs/chiaki_holepunch_stubs.c
     )
+    if(WIN32)
+        list(APPEND LUNARNX_SOURCES src/platform/desktop_automation.cpp)
+    endif()
 
     if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/lib/libpeer/src/peer_connection.c")
         message(FATAL_ERROR
@@ -349,6 +352,19 @@ else()
 
         add_executable(DesktopOptionsTest EXCLUDE_FROM_ALL tests/desktop_options_test.cpp)
         target_compile_definitions(DesktopOptionsTest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+        add_executable(DesktopAutomationTest EXCLUDE_FROM_ALL
+            tests/desktop_automation_test.cpp
+            src/platform/desktop_automation.cpp
+            src/input/gamepad_reader.cpp
+            src/stream/video_renderer.cpp
+            lib/cJSON.c)
+        target_compile_definitions(DesktopAutomationTest PRIVATE
+            PLATFORM_DESKTOP WIN32_LEAN_AND_MEAN NOMINMAX)
+        target_include_directories(DesktopAutomationTest PRIVATE
+            src/ lib/ ${SDL2_INCLUDE_DIRS} ${AVUTIL_INCLUDE})
+        target_link_libraries(DesktopAutomationTest PRIVATE
+            ${SDL2_LIBRARIES} ${AVUTIL_LIB} user32)
     endif()
 
     message(STATUS "Desktop target: LunarNX_Desktop")

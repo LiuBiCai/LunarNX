@@ -26,6 +26,9 @@
 
 #include "../app/stream_controller.h"
 #include "desktop_options.h"
+#ifdef _WIN32
+#include "desktop_automation.h"
+#endif
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <cstdio>
@@ -115,9 +118,12 @@ static int runDesktop(const std::vector<std::string>& args) {
         return 1;
     }
     if (options.help) {
-        printf("Usage: LunarNX_Desktop [--profile NAME] [--console NAME_OR_ID]\n"
+        printf("Usage: LunarNX_Desktop [--profile NAME] [--console NAME_OR_ID] "
+               "[--automation --pipe-name NAME]\n"
                "  --profile NAME       Select an isolated Windows account profile.\n"
-               "  --console NAME_OR_ID Select an Xbox by exact name or ID.\n");
+               "  --console NAME_OR_ID Select an Xbox by exact name or ID.\n"
+               "  --automation         Enable local script input and screenshot pipe (Windows).\n"
+               "  --pipe-name NAME     Set the automation pipe name (without \\\\.\\pipe\\).\n");
         return 0;
     }
     signal(SIGINT, on_signal);
@@ -133,6 +139,10 @@ static int runDesktop(const std::vector<std::string>& args) {
 #else
     if (!options.profile.empty()) {
         fprintf(stderr, "ERROR: --profile is currently supported on Windows only.\n");
+        return 1;
+    }
+    if (options.automation) {
+        fprintf(stderr, "ERROR: --automation is currently supported on Windows only.\n");
         return 1;
     }
 #endif
@@ -248,6 +258,28 @@ static int runDesktop(const std::vector<std::string>& args) {
         return 1;
     }
 
+#ifdef _WIN32
+    lunar::desktop::DesktopAutomationServer automation_server;
+    bool script_mode = false;
+    if (options.automation) {
+        const std::string pipe_name =
+            "\\\\.\\pipe\\" + options.automation_pipe_name;
+        ctrl.setDesktopAutomationEnabled(true);
+        if (!automation_server.start(
+                pipe_name, [&ctrl](const lunar::input::GamepadState& state) {
+                    ctrl.setDesktopAutomationState(state);
+                })) {
+            ctrl.setDesktopAutomationEnabled(false);
+            ctrl.stopStream();
+            fprintf(stderr, "ERROR: Failed to start automation interface.\n");
+            return 1;
+        }
+        script_mode = true;
+        printf("Automation pipe: %s\n", pipe_name.c_str());
+        printf("Input mode: Script (press F8 to switch to Manual)\n");
+    }
+#endif
+
     printf("\n=== STREAMING ===\n");
     printf("Keyboard: F/R/X/Y=A/B/X/Y  N=Guide  Arrows=D-pad  WASD=LStick  IJKL=RStick\n");
     printf("          1/2=LB/RB  3/4=LT/RT  5/6=L3/R3  V=View  M=Menu  Esc=Stop\n\n");
@@ -260,10 +292,26 @@ static int runDesktop(const std::vector<std::string>& args) {
                 (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
                 g_running = false;
             }
+#ifdef _WIN32
+            if (options.automation && event.type == SDL_KEYDOWN &&
+                event.key.keysym.sym == SDLK_F8 && event.key.repeat == 0) {
+                script_mode = !script_mode;
+                ctrl.setDesktopAutomationMode(script_mode);
+                printf("Input mode: %s\n", script_mode ? "Script" : "Manual");
+            }
+#endif
         }
         if (!g_running) break;
         ctrl.updateDesktopKeyboard();
         ctrl.presentVideoFrame();
+#ifdef _WIN32
+        if (options.automation) {
+            automation_server.pumpScreenshots(
+                [&ctrl](std::vector<uint8_t>& pixels, int& width, int& height) {
+                    return ctrl.captureDesktopScreenshot(pixels, width, height);
+                });
+        }
+#endif
         ctrl.update();
 
         auto state = ctrl.getState();
@@ -277,6 +325,12 @@ static int runDesktop(const std::vector<std::string>& args) {
     }
 
     printf("\nShutting down...\n");
+#ifdef _WIN32
+    if (options.automation) {
+        automation_server.stop();
+        ctrl.setDesktopAutomationEnabled(false);
+    }
+#endif
     ctrl.stopStream();
     printf("Done.\n");
     return 0;

@@ -1686,6 +1686,15 @@ void MediaPipeline::presentVideoFrame() {
     }
 }
 
+#ifndef __SWITCH__
+bool MediaPipeline::captureDesktopScreenshot(std::vector<uint8_t>& pixels,
+                                             int& width, int& height) {
+    std::unique_lock<std::recursive_mutex> lock(lifecycle_mutex_, std::try_to_lock);
+    if (!lock.owns_lock() || !running_.load() || !video_renderer_) return false;
+    return video_renderer_->captureScreenshot(pixels, width, height);
+}
+#endif
+
 void MediaPipeline::setVideoPresentationSuspended(bool suspended) {
     const bool previous = video_presentation_suspended_.exchange(
         suspended, std::memory_order_acq_rel);

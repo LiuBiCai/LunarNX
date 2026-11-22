@@ -82,6 +82,10 @@ public:
     void resetLiveness();
     bool prepareDecoderReset();
     bool pollEvents();
+#ifndef __SWITCH__
+    bool captureScreenshot(std::vector<uint8_t>& pixels,
+                           int& width, int& height);
+#endif
     void shutdown();
 
 private:

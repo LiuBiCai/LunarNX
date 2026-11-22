@@ -40,6 +40,9 @@ public:
     bool isConnected() const;
 #ifndef __SWITCH__
     void updateDesktopKeyboard();
+    void setDesktopAutomationEnabled(bool enabled);
+    void setDesktopAutomationMode(bool enabled);
+    void setDesktopAutomationState(const GamepadState& state);
 #endif
 
 private:
@@ -55,6 +58,10 @@ private:
 #else
     std::mutex desktop_state_mutex_;
     GamepadState desktop_state_;
+    GamepadState automation_state_;
+    std::chrono::steady_clock::time_point automation_state_updated_{};
+    bool desktop_automation_enabled_ = false;
+    bool desktop_automation_mode_ = false;
 #endif
 };
 

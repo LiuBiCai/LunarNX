@@ -2412,6 +2412,31 @@ void VideoRenderer::present(){
   recordSuccessfulPresent();
   av_frame_free(&pending_frame_);
 }
+bool VideoRenderer::captureScreenshot(std::vector<uint8_t>& pixels,
+                                      int& width, int& height){
+  std::lock_guard<std::mutex> lock(sdl_mutex_);
+  auto* r=static_cast<SDL_Renderer*>(renderer_);
+  if(!r||successfulPresentCount()==0)return false;
+  int output_width=0,output_height=0;
+  if(SDL_GetRendererOutputSize(r,&output_width,&output_height)<0||
+     output_width<=0||output_height<=0||
+     output_width>4096||output_height>4096){
+    return false;
+  }
+  const size_t pitch=static_cast<size_t>(output_width)*3;
+  const size_t size=pitch*static_cast<size_t>(output_height);
+  if(size>64*1024*1024)return false;
+  std::vector<uint8_t> captured(size);
+  if(SDL_RenderReadPixels(r,nullptr,SDL_PIXELFORMAT_RGB24,
+                          captured.data(),static_cast<int>(pitch))<0){
+    lunar::diagnosticLog("video-render","SDL screenshot failed: %s",SDL_GetError());
+    return false;
+  }
+  pixels=std::move(captured);
+  width=output_width;
+  height=output_height;
+  return true;
+}
 bool VideoRenderer::prepareDecoderReset(){return true;}
 bool VideoRenderer::pollEvents(){SDL_Event e;while(SDL_PollEvent(&e))if(e.type==SDL_QUIT||(e.type==SDL_KEYDOWN&&e.key.keysym.sym==SDLK_ESCAPE))return false;return true;}
 void VideoRenderer::shutdown(){

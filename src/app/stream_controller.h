@@ -111,6 +111,11 @@ public:
     void update() override;
 #ifndef __SWITCH__
     void updateDesktopKeyboard();
+    void setDesktopAutomationEnabled(bool enabled);
+    void setDesktopAutomationMode(bool enabled);
+    void setDesktopAutomationState(const input::GamepadState& state);
+    bool captureDesktopScreenshot(std::vector<uint8_t>& pixels,
+                                  int& width, int& height);
 #endif
     void presentVideoFrame() override;
     void setVideoPresentationSuspended(bool suspended) override;

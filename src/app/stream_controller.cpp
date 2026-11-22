@@ -1298,6 +1298,24 @@ void StreamController::updateDesktopKeyboard() {
         gamepad_->updateDesktopKeyboard();
     }
 }
+
+void StreamController::setDesktopAutomationEnabled(bool enabled) {
+    if (gamepad_) gamepad_->setDesktopAutomationEnabled(enabled);
+}
+
+void StreamController::setDesktopAutomationMode(bool enabled) {
+    if (gamepad_) gamepad_->setDesktopAutomationMode(enabled);
+}
+
+void StreamController::setDesktopAutomationState(
+    const input::GamepadState& state) {
+    if (gamepad_) gamepad_->setDesktopAutomationState(state);
+}
+
+bool StreamController::captureDesktopScreenshot(
+    std::vector<uint8_t>& pixels, int& width, int& height) {
+    return media_ && media_->captureDesktopScreenshot(pixels, width, height);
+}
 #endif
 
 void StreamController::presentVideoFrame() {

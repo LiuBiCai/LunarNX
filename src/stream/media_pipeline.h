@@ -199,6 +199,10 @@ public:
     // resets both video and audio RTP/decode/playback state.
     void prepareForNewMediaSource(const char* reason);
     void presentVideoFrame();
+#ifndef __SWITCH__
+    bool captureDesktopScreenshot(std::vector<uint8_t>& pixels,
+                                  int& width, int& height);
+#endif
     void setVideoPresentationSuspended(bool suspended);
     void setVideoPresentationMode(VideoPresentationMode mode);
     void setVideoDecodeCatchUpMode(VideoDecodeCatchUpMode mode);

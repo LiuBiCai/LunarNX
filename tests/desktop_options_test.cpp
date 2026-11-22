@@ -11,6 +11,12 @@ int main() {
     if (!parseOptions({"app", "--profile", "account-1", "--console", "Xbox One"},
                       options, error) ||
         options.profile != "account-1" || options.console != "Xbox One") return 1;
+    Options automation;
+    if (!parseOptions({"app", "--profile", "script", "--automation",
+                       "--pipe-name", "LunarNX-script"},
+                      automation, error) ||
+        !automation.automation ||
+        automation.automation_pipe_name != "LunarNX-script") return 8;
     Options email_profile;
     if (!parseOptions({"app", "--profile", "account+1@example.invalid"},
                       email_profile, error)) return 7;
@@ -20,6 +26,14 @@ int main() {
              {"app", "--profile", "account."}, {"app", "--profile", "con"},
              {"app", "--profile", "Lpt1.txt"},
              {"app", "--profile", "a", "--profile", "b"},
+             {"app", "--automation"}, {"app", "--profile", "a", "--automation",
+                                       "--automation"},
+             {"app", "--profile", "a", "--automation"},
+             {"app", "--pipe-name", "LunarNX-script"},
+             {"app", "--profile", "a", "--automation", "--pipe-name",
+              "bad\\name"},
+             {"app", "--profile", "a", "--automation", "--pipe-name", "one",
+              "--pipe-name", "two"},
              {"app", "--console", ""}, {"app", "--unknown"}}) {
         Options invalid;
         if (parseOptions(args, invalid, error)) return 2;

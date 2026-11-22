@@ -101,10 +101,9 @@ current CLI flow supports Xbox Remote Play. Xbox Cloud and PlayStation flows,
 along with the full graphical application, are not part of this first Windows
 target.
 
-On startup, the Windows CLI loads `token.json` from its current working
-directory and reuses the saved credentials, refreshing them when needed. It
-starts Microsoft device-code sign-in only when no usable saved credentials are
-found.
+On startup, the Windows CLI loads `token.json` from its profile directory and
+reuses the saved credentials, refreshing them when needed. It starts Microsoft
+device-code sign-in only when no usable saved credentials are found.
 
 For multiple processes, use a different account profile for each process and
 select the console by its exact name or ID. For example, run each command in a
@@ -131,7 +130,7 @@ Protect these directories and do not share or commit their token files.
 
 The console list prints IDs. If names are duplicated, specify the ID instead.
 Omit `--console` to select interactively, or omit both options to retain the
-original current-directory token and interactive behavior. To reuse an existing
+interactive behavior. To reuse an existing
 login in a new profile, close LunarNX and place the existing `token.json` in
 that profile's directory; do not share the same credentials between concurrently
 running profiles. Profiles created by earlier builds under the working directory
@@ -145,6 +144,65 @@ WASD = left stick    IJKL = right stick    Arrow keys = D-pad
 1/2 = LB/RB    3/4 = LT/RT    5/6 = L3/R3
 ```
 
+### Windows automation pipe
+
+Pass `--automation`, `--profile NAME`, and `--pipe-name NAME` to expose a local
+Windows named pipe for a separate controller process. `--pipe-name` takes the
+pipe's short name, without the `\\.\pipe\` prefix. For example,
+`--pipe-name LunarNX-account1` creates `\\.\pipe\LunarNX-account1`; the exact
+path is also printed at startup. Choose a different pipe name for each
+concurrently running LunarNX process. The pipe accepts newline-delimited
+UTF-8 JSON requests.
+The option is explicit and is disabled by default. It starts in Script input
+mode; press **F8** in the streaming window to switch between Script and Manual
+keyboard input. The named pipe and screenshot requests remain available in
+either mode. Switching modes releases the current input, and Script mode
+requires a fresh pipe input after switching back. Pipe input is ignored in
+Manual mode. A state not refreshed for 250 ms is automatically released, and
+disconnecting the pipe client also releases all controls.
+
+Supported requests:
+
+```json
+{"type":"input","state":{"a":true,"left_stick_x":12000,"left_trigger":50000}}
+{"type":"release"}
+{"type":"screenshot"}
+```
+
+`input` replaces the complete state: omitted button fields are false and
+omitted axes/triggers are zero. Button fields use the Xbox names (`a`, `b`,
+`x`, `y`, `dpad_up/down/left/right`, `lb`, `rb`, `lt`, `rt`, `l3`, `r3`,
+`view`, `menu`, `guide`, `touchpad`). Stick fields are signed 16-bit integers;
+trigger fields are unsigned 16-bit integers. Each request receives a JSON
+response line. A successful screenshot response includes `format: "RGB24"`,
+`width`, `height`, and `bytes`; exactly `bytes` tightly packed RGB24 bytes
+follow the response newline. Screenshots are taken from the SDL window on its
+UI thread and require a presented video frame. Only local pipe clients are
+accepted. The pipe should be treated as a control interface for the logged-in
+Xbox session; do not expose it through a network proxy.
+
+The automation script should connect to the exact pipe path printed by the
+LunarNX process. Example PowerShell startup and Python connection:
+
+```powershell
+& .\build\windows-msvc\Release\LunarNX_Desktop.exe `
+  --profile account1 --console "Living Room Xbox" `
+  --automation --pipe-name LunarNX-account1
+```
+
+```python
+pipe = open(r"\\.\pipe\LunarNX-account1", "r+b", buffering=0)
+pipe.write(b'{"type":"input","state":{"a":true}}\n')
+response = pipe.readline()
+```
+
+Build and run the Windows pipe regression test with:
+
+```powershell
+cmake --build --preset windows-msvc-release --target DesktopAutomationTest
+python -X utf8 tests\desktop_automation_test.py
+```
+
 For the Windows SDL window, input, and presentation regression test:
 
 ```powershell
@@ -152,6 +210,8 @@ cmake --build --preset windows-msvc-release --target DesktopSdlTest
 .\build\windows-msvc\Release\DesktopSdlTest.exe
 cmake --build --preset windows-msvc-release --target DesktopOptionsTest
 .\build\windows-msvc\Release\DesktopOptionsTest.exe
+cmake --build --preset windows-msvc-release --target DesktopAutomationTest
+python -X utf8 tests\desktop_automation_test.py
 python -X utf8 tests\desktop_profiles_test.py
 ```
 

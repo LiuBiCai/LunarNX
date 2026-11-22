@@ -1292,6 +1292,14 @@ void StreamController::update() {
     }
 }
 
+#ifndef __SWITCH__
+void StreamController::updateDesktopKeyboard() {
+    if (gamepad_) {
+        gamepad_->updateDesktopKeyboard();
+    }
+}
+#endif
+
 void StreamController::presentVideoFrame() {
     if (media_) {
         media_->presentVideoFrame();

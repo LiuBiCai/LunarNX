@@ -14,10 +14,9 @@
  *   ./LunarNX_Desktop
  *
  * Keyboard controls (during streaming):
- *   Enter=A  Space=B  X/Y=X/Y    Arrow keys=D-pad
- *   WASD=Left stick    IJKL=Right stick
- *   [=LB  ]=RB  Q=LT  E=RT
- *   Tab=View  Esc=Menu/Exit   Z/C=L3/R3
+ *   F/R/X/Y=A/B/X/Y  N=Guide  M=Menu  V=View  Esc=Stop
+ *   Arrow keys=D-pad  WASD=Left stick  IJKL=Right stick
+ *   1/2=LB/RB  3/4=LT/RT  5/6=L3/R3
  */
 
 #ifdef _WIN32
@@ -25,6 +24,8 @@
 #endif
 
 #include "../app/stream_controller.h"
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
 #include <cstdio>
 #include <thread>
 #include <signal.h>
@@ -49,6 +50,7 @@ private:
 #endif
 
 int main() {
+    SDL_SetMainReady();
     setbuf(stdout, NULL);  // unbuffered for test output
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
@@ -82,28 +84,38 @@ int main() {
             return 1;
         }
     } else {
-        // --- Normal mode: full Microsoft auth ---
-        printf("Starting authentication...\n");
-        if (!ctrl.startAuth()) {
-            fprintf(stderr, "ERROR: Failed to start authentication.\n");
-            return 1;
-        }
+        // --- Normal mode: reuse saved Microsoft credentials when available ---
+        if (ctrl.loadTokens(lunar::get_token_path())) {
+            printf("Using saved sign-in");
+            if (!ctrl.getGamertag().empty()) {
+                printf(" for %s", ctrl.getGamertag().c_str());
+            }
+            printf(".\n");
+        } else {
+            printf("Starting authentication...\n");
+            if (!ctrl.startAuth()) {
+                fprintf(stderr, "ERROR: Failed to start authentication.\n");
+                return 1;
+            }
 
-        printf("\n  Visit: %s\n", ctrl.getAuthUrl().c_str());
-        printf("  Code:  %s\n\n", ctrl.getAuthCode().c_str());
-        printf("Press Enter AFTER completing the browser login...\n");
-        getchar();
+            printf("\n  Visit: %s\n", ctrl.getAuthUrl().c_str());
+            printf("  Code:  %s\n\n", ctrl.getAuthCode().c_str());
+            printf("Press Enter AFTER completing the browser login...\n");
+            getchar();
 
-        printf("Polling for token...\n");
-        if (!ctrl.pollAuth()) {
-            fprintf(stderr, "ERROR: Authentication failed.\n");
-            return 1;
+            printf("Polling for token...\n");
+            if (!ctrl.pollAuth()) {
+                fprintf(stderr, "ERROR: Authentication failed.\n");
+                return 1;
+            }
+            printf("Logged in as: %s\n\n", ctrl.getGamertag().c_str());
         }
-        printf("Logged in as: %s\n\n", ctrl.getGamertag().c_str());
 
         printf("Fetching console list...\n");
         if (!ctrl.fetchConsoles()) {
-            fprintf(stderr, "ERROR: No consoles found. Is your Xbox online?\n");
+            const auto error = ctrl.getConsoleFetchError();
+            fprintf(stderr, "ERROR: %s\n",
+                    error.empty() ? "Failed to fetch Xbox consoles." : error.c_str());
             return 1;
         }
     }
@@ -129,11 +141,21 @@ int main() {
     }
 
     printf("\n=== STREAMING ===\n");
-    printf("Keyboard: Enter=A Space=B X/Y=X/Y  Arrows=D-pad  WASD=LStick  IJKL=RStick\n");
-    printf("          [=LB  ]=RB  Q=LT  E=RT  Tab=View  Esc=Stop  Z/C=L3/R3\n\n");
+    printf("Keyboard: F/R/X/Y=A/B/X/Y  N=Guide  Arrows=D-pad  WASD=LStick  IJKL=RStick\n");
+    printf("          1/2=LB/RB  3/4=LT/RT  5/6=L3/R3  V=View  M=Menu  Esc=Stop\n\n");
 
-    // Step 4: Main loop (video/audio/input handled by stream_thread internally)
+    // SDL window events, keyboard sampling, and presentation belong to this thread.
     while (g_running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT ||
+                (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
+                g_running = false;
+            }
+        }
+        if (!g_running) break;
+        ctrl.updateDesktopKeyboard();
+        ctrl.presentVideoFrame();
         ctrl.update();
 
         auto state = ctrl.getState();
@@ -143,7 +165,7 @@ int main() {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
     }
 
     printf("\nShutting down...\n");

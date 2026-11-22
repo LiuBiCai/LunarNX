@@ -11,6 +11,8 @@
 
 #include "../app/stream_controller.h"
 #include "../common.h"
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
 
 #include <atomic>
 #include <chrono>
@@ -29,6 +31,7 @@ static const char* envOr(const char* k, const char* fb) {
 }
 
 int main() {
+    SDL_SetMainReady();
     setbuf(stdout, nullptr);
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
@@ -87,6 +90,16 @@ int main() {
 
     const auto start = std::chrono::steady_clock::now();
     while (g_running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT ||
+                (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
+                g_running = false;
+            }
+        }
+        if (!g_running) break;
+        ctrl.updateDesktopKeyboard();
+        ctrl.presentVideoFrame();
         ctrl.update();
         const auto state = ctrl.getState();
         if (state == lunar::app::StreamState::Streaming) {
@@ -108,7 +121,7 @@ int main() {
                 break;
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
     }
 
     g_running = false;

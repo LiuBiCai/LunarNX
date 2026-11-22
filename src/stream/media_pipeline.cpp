@@ -1575,9 +1575,8 @@ void MediaPipeline::handleVideoFrame(const VideoFrame& frame,
                 rendered ? 1 : 0);
         }
         if (rendered && perf) perf->recordFrame();
-        // Software presentation publishes synchronously from render(). The
-        // hardware path opens this gate from presentVideoFrame() only after a
-        // frame has actually reached the display command stream.
+        // Synchronous renderers can open the audio gate here. Queued
+        // renderers open it from presentVideoFrame() after a successful present.
         if (rendered && video_renderer_->successfulPresentCount() > 0) {
             openAudioStartupGateIfNeeded();
         }

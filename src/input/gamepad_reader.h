@@ -38,6 +38,9 @@ public:
     void reloadButtonMapping();
     GamepadState read();
     bool isConnected() const;
+#ifndef __SWITCH__
+    void updateDesktopKeyboard();
+#endif
 
 private:
 #ifdef __SWITCH__
@@ -49,6 +52,9 @@ private:
     bool initialized_ = false;
 #ifdef __SWITCH__
     void* pad_state_ = nullptr;  // PadState*
+#else
+    std::mutex desktop_state_mutex_;
+    GamepadState desktop_state_;
 #endif
 };
 

@@ -130,6 +130,7 @@ private:
     std::string gamertag_;
     std::string last_error_;
     std::string force_region_ip_;
+    bool cloud_token_attempted_ = false;
     std::chrono::steady_clock::time_point last_refresh_attempt_{};
 };
 

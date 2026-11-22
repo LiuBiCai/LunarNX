@@ -50,6 +50,11 @@ bool GamepadReader::initialize() {
     padInitializeDefault(pad);
     pad_state_ = pad;
     lunar::diagnosticLog("gamepad", "pad initialize done");
+#else
+    {
+        std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+        desktop_state_ = {};
+    }
 #endif
     initialized_ = true;
     lunar::diagnosticLog("gamepad", "initialize done");
@@ -137,32 +142,44 @@ GamepadState GamepadReader::read() {
     state.right_trigger = state.rt ? 65535 : 0;
 
 #else
-    // Desktop: optional SDL2 keyboard (for testing). Never throw if SDL is not ready.
+    std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+    state = desktop_state_;
+#endif
+    return state;
+}
+
+#ifndef __SWITCH__
+void GamepadReader::updateDesktopKeyboard() {
+    GamepadState state = {};
     if (SDL_WasInit(SDL_INIT_EVENTS) == 0 && SDL_WasInit(SDL_INIT_VIDEO) == 0) {
-        return state;
+        std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+        desktop_state_ = state;
+        return;
     }
-    SDL_PumpEvents();
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
     if (!keys) {
-        return state;
+        std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+        desktop_state_ = state;
+        return;
     }
 
-    state.a = keys[SDL_SCANCODE_RETURN];
-    state.b = keys[SDL_SCANCODE_SPACE];
+    state.a = keys[SDL_SCANCODE_F];
+    state.b = keys[SDL_SCANCODE_R];
     state.x = keys[SDL_SCANCODE_X];
     state.y = keys[SDL_SCANCODE_Y];
     state.dpad_up    = keys[SDL_SCANCODE_UP];
     state.dpad_down  = keys[SDL_SCANCODE_DOWN];
     state.dpad_left  = keys[SDL_SCANCODE_LEFT];
     state.dpad_right = keys[SDL_SCANCODE_RIGHT];
-    state.lb = keys[SDL_SCANCODE_LEFTBRACKET];
-    state.rb = keys[SDL_SCANCODE_RIGHTBRACKET];
-    state.lt = keys[SDL_SCANCODE_Q];
-    state.rt = keys[SDL_SCANCODE_E];
-    state.l3 = keys[SDL_SCANCODE_Z];
-    state.r3 = keys[SDL_SCANCODE_C];
-    state.view = keys[SDL_SCANCODE_TAB];
-    state.menu = keys[SDL_SCANCODE_ESCAPE];
+    state.lb = keys[SDL_SCANCODE_1];
+    state.rb = keys[SDL_SCANCODE_2];
+    state.lt = keys[SDL_SCANCODE_3];
+    state.rt = keys[SDL_SCANCODE_4];
+    state.l3 = keys[SDL_SCANCODE_5];
+    state.r3 = keys[SDL_SCANCODE_6];
+    state.view = keys[SDL_SCANCODE_V];
+    state.menu = keys[SDL_SCANCODE_M];
+    state.guide = keys[SDL_SCANCODE_N];
 
     float lx = (keys[SDL_SCANCODE_D] ? 1.0f : 0) - (keys[SDL_SCANCODE_A] ? 1.0f : 0);
     float ly = (keys[SDL_SCANCODE_S] ? 1.0f : 0) - (keys[SDL_SCANCODE_W] ? 1.0f : 0);
@@ -174,11 +191,12 @@ GamepadState GamepadReader::read() {
     state.right_stick_x = static_cast<int16_t>(rx * 32767);
     state.right_stick_y = static_cast<int16_t>(-ry * 32767);
 
-    state.left_trigger  = keys[SDL_SCANCODE_Q] ? 65535 : 0;
-    state.right_trigger = keys[SDL_SCANCODE_E] ? 65535 : 0;
-#endif
-    return state;
+    state.left_trigger  = state.lt ? 65535 : 0;
+    state.right_trigger = state.rt ? 65535 : 0;
+    std::lock_guard<std::mutex> lock(desktop_state_mutex_);
+    desktop_state_ = state;
 }
+#endif
 
 bool GamepadReader::isConnected() const {
     return initialized_;

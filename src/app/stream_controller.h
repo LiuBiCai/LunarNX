@@ -109,6 +109,9 @@ public:
 
     // Per-frame update for input + rendering
     void update() override;
+#ifndef __SWITCH__
+    void updateDesktopKeyboard();
+#endif
     void presentVideoFrame() override;
     void setVideoPresentationSuspended(bool suspended) override;
 

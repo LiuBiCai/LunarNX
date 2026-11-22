@@ -28,6 +28,9 @@ require(
 refresh_start = auth_source.index("bool AuthManager::refreshTokensIfNeeded(")
 refresh_end = auth_source.index("bool AuthManager::shouldRefreshTokens()", refresh_start)
 refresh = auth_source[refresh_start:refresh_end]
+policy_start = auth_source.index("bool AuthManager::shouldRefreshTokens()")
+policy_end = auth_source.index("bool AuthManager::hasUsableStreamingTokens()", policy_start)
+policy = auth_source[policy_start:policy_end]
 derive_start = auth_source.index("bool AuthManager::stepGetStreamingTokens(")
 derive_end = auth_source.index("bool AuthManager::fetchStreamToken(", derive_start)
 derive = auth_source[derive_start:derive_end]
@@ -39,6 +42,12 @@ require(
     "http_.post(TOKEN_URL, body.str(), headers, cancel)" in refresh
     and "stepGetStreamingTokens(cancel)" in refresh,
     "MSAL refresh and Xbox token derivation must receive stream-stop cancellation",
+)
+require(
+    "if (!cloud_token_.valid() && !cloud_token_attempted_) return true;" in policy
+    and "cloud_token_attempted_ = true;" in derive
+    and "cloud_token_attempted_ = false;" in auth_source,
+    "a missing optional cloud token must be retried once, not force every home-stream auth check",
 )
 require(
     derive.count(", cancel);\n") >= 3

@@ -338,6 +338,14 @@ else()
     )
     if(WIN32)
         target_link_libraries(LunarNX_Desktop PRIVATE ws2_32 iphlpapi)
+
+        add_executable(DesktopSdlTest EXCLUDE_FROM_ALL
+            tests/desktop_sdl_test.cpp
+            src/input/gamepad_reader.cpp
+            src/stream/video_renderer.cpp)
+        target_compile_definitions(DesktopSdlTest PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+        target_include_directories(DesktopSdlTest PRIVATE ${AVUTIL_INCLUDE})
+        target_link_libraries(DesktopSdlTest PRIVATE SDL2::SDL2 ${AVUTIL_LIB} user32)
     endif()
 
     message(STATUS "Desktop target: LunarNX_Desktop")

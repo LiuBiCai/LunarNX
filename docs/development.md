@@ -101,6 +101,26 @@ current CLI flow supports Xbox Remote Play. Xbox Cloud and PlayStation flows,
 along with the full graphical application, are not part of this first Windows
 target.
 
+On startup, the Windows CLI loads `token.json` from its current working
+directory and reuses the saved credentials, refreshing them when needed. It
+starts Microsoft device-code sign-in only when no usable saved credentials are
+found.
+
+Desktop streaming keyboard controls:
+
+```text
+F/R/X/Y = A/B/X/Y    N = Xbox Guide    M = Menu    V = View    Esc = Stop
+WASD = left stick    IJKL = right stick    Arrow keys = D-pad
+1/2 = LB/RB    3/4 = LT/RT    5/6 = L3/R3
+```
+
+For the Windows SDL window, input, and presentation regression test:
+
+```powershell
+cmake --build --preset windows-msvc-release --target DesktopSdlTest
+.\build\windows-msvc\Release\DesktopSdlTest.exe
+```
+
 The dependency setup applies the tracked `0004-windows-winsock.patch` to the
 legacy libpeer checkout. The Windows target initializes Winsock, uses
 `GetAdaptersAddresses()` for host ICE candidates, and currently uses libpeer's

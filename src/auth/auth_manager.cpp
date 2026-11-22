@@ -556,6 +556,7 @@ bool AuthManager::stepGetStreamingTokens(CancelCallback cancel) {
         }
         lunar::diagnosticLog("auth", "Cloud streaming token unavailable: %s", last_error_.c_str());
     }
+    cloud_token_attempted_ = true;
 
     // Persist user info
     {
@@ -815,9 +816,9 @@ bool AuthManager::shouldRefreshTokens() const {
     const auto& d = tokens_.data();
     if (msal_refresh_token_.empty()) return false;
     if (!hasUsableStreamingTokens()) return true;
-    // Older token.json files may only have home gssv_token. Re-derive so xCloud
-    // (xgpuweb / xgpuwebf2p) is populated when the account supports it.
-    if (!cloud_token_.valid()) return true;
+    // Older token.json files may only have home gssv_token. Re-derive once so
+    // xCloud is populated when supported, but don't repeat a denied lookup.
+    if (!cloud_token_.valid() && !cloud_token_attempted_) return true;
     if (d.expires_at_ms == 0) return true;
     auto now_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
@@ -859,6 +860,7 @@ void AuthManager::setForceRegionIp(const std::string& ip) {
                          force_region_ip_.empty() ? "(default)" : force_region_ip_.c_str());
     // Region change invalidates any previously denied/cached cloud decision.
     cloud_token_ = {};
+    cloud_token_attempted_ = false;
     last_refresh_attempt_ = {};
 }
 
@@ -877,6 +879,7 @@ bool AuthManager::refreshStreamingTokens(bool force, CancelCallback cancel) {
         last_refresh_attempt_ = {};
         tokens_.data().expires_at_ms = 1; // force shouldRefreshTokens() true
         cloud_token_ = {};
+        cloud_token_attempted_ = false;
     }
     const bool refreshed = refreshTokensIfNeeded(cancel);
     if (force) {
@@ -1017,6 +1020,7 @@ void AuthManager::clearInMemoryTokens() {
     gamertag_.clear();
     last_error_.clear();
     last_refresh_attempt_ = {};
+    cloud_token_attempted_ = false;
 }
 
 } // namespace lunar::auth

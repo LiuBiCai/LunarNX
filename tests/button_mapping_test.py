@@ -11,6 +11,7 @@ def require(condition, message):
 header = Path("src/input/button_mapping.h").read_text()
 mapping = Path("src/input/button_mapping.cpp").read_text()
 reader = Path("src/input/gamepad_reader.cpp").read_text()
+desktop_main = Path("src/platform/desktop_main.cpp").read_text()
 activity = Path("src/ui/button_mapping_activity.cpp").read_text()
 settings = Path("src/ui/stream_settings_activity.cpp").read_text()
 ps_settings = Path("src/ui/ps_settings_activity.cpp").read_text()
@@ -70,6 +71,23 @@ require("mappingUsesCaptureButton" in reader and
         "btns |= kButtonMappingCapture" in reader and
         "releaseCaptureButton()" in reader,
         "configured screenshot mappings must feed streams and restore system input")
+for button, key in {
+        "a": "F", "b": "R", "x": "X", "y": "Y",
+        "lb": "1", "rb": "2", "lt": "3", "rt": "4",
+        "l3": "5", "r3": "6", "view": "V", "menu": "M",
+        "guide": "N",
+}.items():
+    require(f"state.{button} = keys[SDL_SCANCODE_{key}]" in reader,
+            f"desktop Xbox {button.upper()} must map to {key}")
+require("SDLK_ESCAPE" in desktop_main and
+        "SDL_QUIT" in desktop_main and "Esc=Stop" in desktop_main,
+        "Escape must stop the desktop stream")
+require("state.left_trigger  = state.lt ? 65535 : 0;" in reader and
+        "state.right_trigger = state.rt ? 65535 : 0;" in reader,
+        "desktop trigger axes must follow the configured trigger keys")
+require("SDL_SCANCODE_W" in reader and "SDL_SCANCODE_I" in reader and
+        "SDL_SCANCODE_UP" in reader,
+        "desktop keyboard must retain WASD/IJKL sticks and arrow-key D-pad")
 require("defaultButtonMapping(profile_)" in activity and "reset_all" in activity,
         "the mapping screen must reset all mappings to defaults")
 require("src/input/button_mapping.cpp" in switch_makefile and

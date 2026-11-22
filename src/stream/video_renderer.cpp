@@ -2295,6 +2295,9 @@ void VideoRenderer::shutdown(){
 #else
 #include <SDL2/SDL.h>
 #include <mutex>
+extern "C" {
+#include <libavutil/frame.h>
+}
 namespace lunar::stream {
 VideoRenderer::VideoRenderer()=default;VideoRenderer::~VideoRenderer(){shutdown();}
 void VideoRenderer::setProgressSink(
@@ -2359,33 +2362,64 @@ bool VideoRenderer::initialize(const char* t,int w,int h){
   auto* r=SDL_CreateRenderer(win,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
   if(!r)return false;renderer_=r;
   auto* tx=SDL_CreateTexture(r,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,w,h);
-  if(!tx)return false;texture_=tx;return true;
+  if(!tx)return false;texture_=tx;texture_width_=w;texture_height_=h;return true;
 }
 bool VideoRenderer::render(const VideoFrame& f){
   std::lock_guard<std::mutex> lock(sdl_mutex_);
-  auto* t=static_cast<SDL_Texture*>(texture_);
-  auto* r=static_cast<SDL_Renderer*>(renderer_);
-  if(!t||!r){
+  if(!texture_||!renderer_||!f.avframe){
     markRenderFault(RenderFault::InvalidFrame);
     return false;
   }
-  SDL_Rect rect = {0, 0, f.width, f.height};
-  if(SDL_UpdateYUVTexture(t, &rect, f.data[0], f.linesize[0], f.data[1], f.linesize[1], f.data[2], f.linesize[2]) < 0 ||
-     SDL_RenderClear(r) < 0 || SDL_RenderCopy(r,t,nullptr,nullptr) < 0){
+  AVFrame* frame=av_frame_clone(f.avframe);
+  if(!frame){
+    lunar::diagnosticLog("video-render","failed to retain decoded frame");
     markRenderFault(RenderFault::InvalidFrame);
     return false;
+  }
+  av_frame_free(&pending_frame_);
+  pending_frame_=frame;
+  return true;
+}
+void VideoRenderer::present(){
+  std::lock_guard<std::mutex> lock(sdl_mutex_);
+  if(!pending_frame_)return;
+  auto* r=static_cast<SDL_Renderer*>(renderer_);
+  AVFrame* f=pending_frame_;
+  if(f->width!=texture_width_||f->height!=texture_height_){
+    auto* replacement=SDL_CreateTexture(r,SDL_PIXELFORMAT_IYUV,
+                                       SDL_TEXTUREACCESS_STREAMING,f->width,f->height);
+    if(!replacement){
+      lunar::diagnosticLog("video-render","SDL texture creation failed: %s",SDL_GetError());
+      markRenderFault(RenderFault::InvalidFrame);
+      av_frame_free(&pending_frame_);
+      return;
+    }
+    SDL_DestroyTexture(static_cast<SDL_Texture*>(texture_));
+    texture_=replacement;
+    texture_width_=f->width;
+    texture_height_=f->height;
+  }
+  auto* t=static_cast<SDL_Texture*>(texture_);
+  SDL_Rect rect = {0, 0, f->width, f->height};
+  if(SDL_UpdateYUVTexture(t, &rect, f->data[0], f->linesize[0], f->data[1], f->linesize[1], f->data[2], f->linesize[2]) < 0 ||
+     SDL_RenderClear(r) < 0 || SDL_RenderCopy(r,t,nullptr,nullptr) < 0){
+    lunar::diagnosticLog("video-render","SDL presentation failed: %s",SDL_GetError());
+    markRenderFault(RenderFault::InvalidFrame);
+    av_frame_free(&pending_frame_);
+    return;
   }
   SDL_RenderPresent(r);
   recordSuccessfulPresent();
-  return true;
+  av_frame_free(&pending_frame_);
 }
-void VideoRenderer::present(){}
 bool VideoRenderer::prepareDecoderReset(){return true;}
 bool VideoRenderer::pollEvents(){SDL_Event e;while(SDL_PollEvent(&e))if(e.type==SDL_QUIT||(e.type==SDL_KEYDOWN&&e.key.keysym.sym==SDLK_ESCAPE))return false;return true;}
 void VideoRenderer::shutdown(){
   setRenderStage(VideoRenderStage::Shutdown);
   std::lock_guard<std::mutex> lock(sdl_mutex_);
+  av_frame_free(&pending_frame_);
   if(texture_){SDL_DestroyTexture(static_cast<SDL_Texture*>(texture_));texture_=nullptr;}
+  texture_width_=0;texture_height_=0;
   if(renderer_){SDL_DestroyRenderer(static_cast<SDL_Renderer*>(renderer_));renderer_=nullptr;}
   if(window_){SDL_DestroyWindow(static_cast<SDL_Window*>(window_));window_=nullptr;}
 }

@@ -122,6 +122,9 @@ private:
     void* window_ = nullptr;
     void* renderer_ = nullptr;
     void* texture_ = nullptr;
+    AVFrame* pending_frame_ = nullptr;
+    int texture_width_ = 0;
+    int texture_height_ = 0;
     std::mutex sdl_mutex_;
 #endif
 };

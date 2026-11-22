@@ -14,6 +14,7 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     source = (ROOT / "src/ui/auth_activity.cpp").read_text()
     header = (ROOT / "src/ui/auth_activity.h").read_text()
+    desktop = (ROOT / "src/platform/desktop_main.cpp").read_text()
 
     create_start = source.index("brls::View* AuthActivity::createContentView()")
     create_end = source.index(
@@ -57,6 +58,18 @@ def main() -> None:
     require(
         "bool resumeSavedSessionIfPresent();" in header,
         "AuthActivity must declare the saved-session navigation result",
+    )
+
+    require(
+        "if (ctrl.loadTokens(lunar::get_token_path()))" in desktop,
+        "desktop startup must load saved tokens before deciding to start device-code auth",
+    )
+    require(
+        desktop.index("ctrl.loadTokens(lunar::get_token_path())")
+        < desktop.index("ctrl.startAuth()")
+        < desktop.index("ctrl.pollAuth()")
+        < desktop.index("ctrl.fetchConsoles()"),
+        "desktop startup must reuse saved tokens or complete device-code auth before fetching consoles",
     )
 
     print("Auth startup laziness tests passed")
